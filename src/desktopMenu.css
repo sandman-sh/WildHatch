@@ -1,0 +1,333 @@
+.desktop-only {
+  display: none;
+}
+#start-pvp,
+#start-guest,
+.menu-utilities button {
+  background: #172e27ed;
+  border: 1px solid #adbd975e;
+  color: #f6edce;
+}
+#start-pvp {
+  color: #b9e6d2;
+  border-color: #91beab9c;
+}
+.alternate-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+#main-menu .alternate-modes button {
+  justify-content: center;
+  text-align: center;
+  min-width: 0;
+  padding-inline: 8px;
+}
+#main-menu .menu-actions button:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.menu-utilities {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+#main-menu .menu-utilities button {
+  justify-content: center;
+  text-align: center;
+  padding-inline: 6px;
+  font-size: 15px;
+}
+#title-panel {
+  background: #182f27;
+  color: #f6edce;
+  font: 15px/1.55 system-ui;
+}
+#mode-entry {
+  width: min(400px, calc(100vw - 32px));
+  padding: clamp(16px, 4dvh, 26px);
+  border: 1px solid #859f7f;
+  border-radius: 10px;
+  background: #172d25;
+  color: #fff0c9;
+  box-shadow: 0 14px 48px #08151099;
+  font:
+    15px/1.5 system-ui,
+    sans-serif;
+}
+#mode-entry .dialoghead {
+  gap: 12px;
+}
+#mode-entry h2 {
+  margin: 0;
+  font-size: 28px;
+}
+#main-menu .menu-actions button,
+#mode-entry button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#mode-entry button:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+#mode-entry-close {
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #849b7966;
+  border-radius: 5px;
+  background: #28453a;
+  font-size: 24px;
+}
+#mode-entry-action {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 1px solid #fff0b5;
+  border-radius: 5px;
+  background: #f2cb80;
+  color: #263022;
+  font:
+    700 21px/1.2 "Pixelify Sans",
+    monospace;
+}
+#mode-entry-action:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+#mode-entry-status {
+  min-height: 1.5em;
+  margin: 10px 0 0;
+  color: #d9e4d4;
+  font-size: 13px;
+}
+#title-panel-close {
+  border-radius: 5px;
+  padding: 4px 12px;
+  background: #385547;
+}
+#title-panel-content > dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 18px;
+}
+#title-panel-content > dl dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+#title-panel-content > label {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  #main-menu .menu-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: min(420px, 100%);
+    max-width: 420px;
+  }
+  #main-menu .menu-utilities {
+    grid-column: 1/-1;
+  }
+  #main-menu .alternate-modes {
+    grid-column: 1/-1;
+  }
+  #main-menu #choose-ranger {
+    grid-column: 1/-1;
+  }
+  #main-menu .menu-utilities button {
+    height: 34px;
+  }
+}
+@media (min-width: 900px) and (pointer: fine) {
+  :root {
+    --desktop-edge: clamp(24px, 2.35vw, 48px);
+    --display-type: "Pixelify Sans", monospace;
+    --reading-type: "Segoe UI", system-ui, sans-serif;
+    --pine: #162d27;
+    --parchment: #f6edce;
+    --brass: #e8bc72;
+    --keyline: #71847477;
+  }
+  .desktop-only {
+    display: inline-block;
+  }
+  #main-menu {
+    padding-inline: clamp(48px, 6.2vw, 138px);
+    padding-block: clamp(24px, 5dvh, 60px);
+    gap: 20px;
+  }
+  .menu-shade {
+    background:
+      linear-gradient(
+        90deg,
+        #081b16e6 0%,
+        #0b2019c7 23%,
+        #10281b55 46%,
+        transparent 65%
+      ),
+      linear-gradient(0deg, #071910ab, transparent 26%);
+  }
+  #main-menu .menu-body {
+    margin: 0;
+    width: min(49vw, 740px);
+  }
+  #main-menu #game-logo {
+    transform: none;
+    font: 700 clamp(78px, min(8.3vw, 15vh), 146px)/1 var(--display-type);
+    letter-spacing: -0.04em;
+    text-shadow:
+      0 3px #aa9d77,
+      0 6px #464438,
+      0 9px 24px #101b15a6;
+  }
+  #game-logo span:last-child {
+    text-shadow:
+      0 3px #ac8549,
+      0 6px #59492e,
+      0 9px 24px #101b15a6;
+  }
+  #main-menu .subtitle {
+    margin: 12px 0 0;
+    color: #e4dfc9;
+    font: 400 clamp(16px, 1.2vw, 21px)/1.5 var(--reading-type);
+    letter-spacing: 0.015em;
+  }
+  .edition,
+  .sound {
+    font: 700 14px/1.2 var(--display-type);
+    letter-spacing: 0.1em;
+  }
+  .menu-actions {
+    width: clamp(306px, 22vw, 390px);
+    gap: 10px;
+    margin-top: clamp(24px, 4.5vh, 52px);
+  }
+  #main-menu .menu-actions button {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 14px;
+    min-height: 48px;
+    height: auto;
+    padding: 10px 16px;
+    text-align: left;
+    text-transform: none;
+    border-radius: 6px;
+    font: 400 20px/1.2 var(--display-type);
+    letter-spacing: 0;
+  }
+  #main-menu #start-game {
+    min-height: 58px;
+    font-weight: 700;
+    font-size: 23px;
+  }
+  #start-game .play-icon {
+    margin-inline: 8px;
+  }
+  #main-menu #choose-ranger,
+  #main-menu #how-to {
+    background: #172e27ed;
+    border: 1px solid #adbd975e;
+  }
+  #menu-ranger-portrait {
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    background: #385246;
+    border-radius: 3px;
+  }
+  #menu-ranger-name {
+    margin-left: auto;
+    max-width: 42%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #c9d7c3;
+    font: 14px/1.3 var(--reading-type);
+  }
+  .controls-glyph {
+    width: 28px;
+    text-align: center;
+    color: #e2d4a8;
+  }
+  #ranger-picker,
+  #controls-dialog {
+    padding: 24px;
+    border-radius: 12px;
+    border: 1px solid var(--keyline);
+    background: var(--pine);
+    color: var(--parchment);
+  }
+  #ranger-picker[open] {
+    display: grid;
+    grid-template-columns: minmax(210px, 0.85fr) minmax(290px, 1.15fr);
+    gap: 18px 22px;
+    width: min(820px, 85vw);
+    align-items: start;
+  }
+  #ranger-picker .dialoghead {
+    grid-column: 1/-1;
+    border-bottom: 1px solid var(--keyline);
+    padding-bottom: 14px;
+  }
+  #ranger-picker h2,
+  #controls-dialog h2 {
+    font: 700 32px/1.08 var(--display-type);
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  #ranger-preview {
+    height: clamp(220px, 42dvh, 440px);
+    border-radius: 7px;
+  }
+  #ranger-picker .explorer-list {
+    gap: 10px;
+  }
+  #explorer-search {
+    border-radius: 5px;
+    font: 16px/1.4 var(--reading-type);
+  }
+  #roster {
+    gap: 8px;
+    max-height: clamp(150px, 32dvh, 355px);
+    scrollbar-gutter: stable;
+  }
+  #roster button:not([hidden]) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    min-height: 44px;
+    border-radius: 5px;
+    font: 15px/1.2 var(--reading-type);
+    overflow-wrap: anywhere;
+  }
+  #explorer-status,
+  #controls-dialog p {
+    font: 15px/1.5 var(--reading-type);
+  }
+  .roster-portrait {
+    flex: none;
+    object-fit: contain;
+    background: #0e211c45;
+    border-radius: 3px;
+  }
+  #controls-dialog h2 {
+    margin: 12px 0 20px;
+  }
+  #controls-dialog .bindings {
+    align-items: baseline;
+    gap: 8px 24px;
+    font: 16px/1.5 var(--reading-type);
+  }
+  #controls-dialog .bindings dd {
+    color: #e7cd99;
+    letter-spacing: 0.025em;
+  }
+  #controls-dialog p:not(.arena-help) {
+    display: none;
+  }
+}

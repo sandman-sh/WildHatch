@@ -1,0 +1,9 @@
+{
+  "name": "WildHatch",
+  "short_name": "WildHatch",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "theme_color": "#152d27",
+  "background_color": "#152d27"
+}

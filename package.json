@@ -1,0 +1,41 @@
+{
+  "name": "wildhatch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env dev.mjs",
+    "build": "tsc --noEmit && tsc -p tsconfig.server.json && vite build && node --env-file-if-exists=.env scripts/check-client-build.mjs",
+    "server": "node --env-file-if-exists=.env --experimental-strip-types server/index.ts",
+    "devnet:init": "node --env-file-if-exists=.env chain/init-currency.mjs",
+    "test": "node tests/island.mjs && node tests/game.mjs",
+    "test:kane": "node scripts/run-kane.mjs",
+    "saves:import": "node --env-file-if-exists=.env scripts/import-legacy-saves.mjs"
+  },
+  "dependencies": {
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "@solana/web3.js": "1.98.4",
+    "@supabase/supabase-js": "^2.119.2",
+    "bs58": "^6.0.0",
+    "buffer": "6.0.3",
+    "pg": "8.16.3",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.6.0",
+    "@types/node": "^24.19.2",
+    "@types/pg": "8.15.6",
+    "@types/three": "^0.180.0",
+    "prettier": "^3.10.1",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "overrides": {
+    "jayson": {
+      "uuid": "11.1.1"
+    }
+  }
+}

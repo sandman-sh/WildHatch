@@ -1,0 +1,440 @@
+.icon-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hud-icon {
+  width: 23px;
+  height: 23px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+#hud {
+  --glass: #142b27ee;
+  --rim: #adbea26b;
+  --cream: #fff2cc;
+  --mint: #a9f1c8;
+  --inset-x: max(20px, env(safe-area-inset-right));
+  --inset-y: max(18px, env(safe-area-inset-bottom));
+}
+#hud button,
+#hud summary {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+#hud .actions {
+  bottom: var(--inset-y);
+  right: var(--inset-x);
+  left: auto;
+  transform: none;
+}
+#hud #interact,
+#throw-wild {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  min-height: 48px;
+  background: #d9ecc0;
+  color: #203c34;
+  border: 1px solid #eff7cd;
+  border-radius: 24px;
+  box-shadow:
+    0 3px 0 #41654f,
+    0 5px 16px #13292345;
+  font:
+    700 18px "Pixelify Sans",
+    monospace;
+}
+#interact kbd {
+  color: #527662;
+  margin: 0 0 0 3px;
+}
+#hud .field-belt {
+  left: 50%;
+  right: auto;
+  bottom: var(--inset-y);
+  transform: translateX(-50%);
+  gap: 10px;
+  align-items: center;
+}
+#hud .field-belt button,
+#hud .field-tools summary,
+#hud #touch button,
+#leave-catch,
+#study-wild {
+  background: var(--glass);
+  color: var(--cream);
+  border: 1px solid var(--rim);
+  border-radius: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 3px 8px #10261c30;
+  min-width: 44px;
+  min-height: 44px;
+}
+#hud .field-belt button {
+  padding: 4px 11px;
+}
+#hud #mission-shortcut {
+  padding: 0;
+  border-radius: 50%;
+}
+#hud .field-tools {
+  z-index: 3;
+}
+#hud .field-tools summary {
+  padding: 4px 9px 4px 5px;
+}
+#hud #ranger-headshot {
+  border-radius: 10px;
+}
+#hud .field-tools summary .hud-icon {
+  width: 17px;
+  height: 17px;
+}
+#hud .kit-content {
+  width: 242px;
+  max-width: 90vw;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px;
+  background: #132c26f5;
+  border-radius: 17px;
+  border: 1px solid var(--rim);
+  box-shadow: 0 8px 22px #0a1b2350;
+  overflow: auto;
+  bottom: calc(100% + 8px);
+}
+.kit-content #ranger {
+  grid-column: 1/3;
+  align-self: center;
+}
+.kit-content #online {
+  text-align: right;
+  align-self: center;
+  font:
+    11px "Pixelify Sans",
+    monospace;
+  letter-spacing: 0;
+}
+#hud .kit-content button {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  padding: 5px 2px;
+  border: 1px solid #79917c55;
+  border-radius: 9px;
+  color: #e5ead4;
+  font:
+    14px "Pixelify Sans",
+    monospace;
+  min-height: 49px;
+}
+#hud .kit-content .hud-icon {
+  height: 20px;
+  width: 20px;
+  color: #b1d8ba;
+}
+#hud #touch button {
+  padding: 0;
+  border-radius: 50%;
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+}
+#capture-hud[hidden],
+#capture-hud [hidden] {
+  display: none !important;
+}
+body.in-encounter
+  #hud
+  > :is(
+    .location,
+    .mapcard,
+    .actions,
+    .quest,
+    .field-tools,
+    .field-belt,
+    #touch
+  ) {
+  display: none;
+}
+#capture-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font:
+    16px "Pixelify Sans",
+    monospace;
+  color: #f4f3df;
+}
+#capture-hud button {
+  pointer-events: auto;
+}
+.quarry {
+  position: absolute;
+  top: max(15px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--glass);
+  border: 1px solid var(--rim);
+  border-radius: 14px;
+  padding: 8px 13px;
+  box-shadow: 0 4px 14px #172d2633;
+}
+.quarry strong,
+.quarry small {
+  display: block;
+  white-space: nowrap;
+}
+.quarry strong {
+  font-size: 21px;
+  line-height: 1.1;
+  color: #f8eaca;
+}
+.quarry small {
+  margin-top: 3px;
+  font:
+    13px "Pixelify Sans",
+    monospace;
+  letter-spacing: 0;
+  color: #bad1c1;
+}
+.signal-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--mint);
+  transform: rotate(45deg);
+}
+#cast-chance {
+  color: var(--mint);
+  border-left: 1px solid var(--rim);
+  padding-left: 12px;
+  font-size: 19px;
+}
+#leave-catch {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: max(16px, env(safe-area-inset-left));
+  border-radius: 50%;
+}
+.orb-rack,
+.cast-actions {
+  position: absolute;
+  bottom: var(--inset-y);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.orb-rack {
+  left: max(18px, env(safe-area-inset-left));
+}
+.orb-rack button {
+  display: grid;
+  grid-template-columns: 27px 1fr;
+  column-gap: 7px;
+  align-items: center;
+  text-align: left;
+  background: var(--glass);
+  color: var(--cream);
+  min-height: 48px;
+  min-width: 85px;
+  padding: 5px 10px;
+  border: 1px solid var(--rim);
+  border-radius: 14px;
+  font:
+    16px/1 "Pixelify Sans",
+    monospace;
+}
+.orb-rack small {
+  font:
+    12px/1 "Pixelify Sans",
+    monospace;
+  color: #cbd8c9;
+  letter-spacing: 0;
+}
+.orb-rack button[aria-pressed="true"] {
+  border-color: var(--mint);
+  box-shadow: inset 0 -2px var(--mint);
+}
+.orb-rack button[data-orb="focus"][aria-pressed="true"] {
+  border-color: #d9beff;
+  box-shadow: inset 0 -2px #d9beff;
+}
+.orb-icon {
+  grid-row: span 2;
+  width: 25px;
+  height: 25px;
+  display: block;
+  border: 1px solid #d9f3cd;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 32% 25%, #f4ffdf 3%, transparent 15%),
+    linear-gradient(22deg, #dda95d 40%, #294c4e 41% 52%, #35b69a 54%);
+  box-shadow: inset -3px -3px 0 #183e3544;
+}
+.orb-icon.prism {
+  border-color: #e2d3ff;
+  background:
+    radial-gradient(circle at 32% 25%, white 3%, transparent 15%),
+    linear-gradient(22deg, #9fc4eb 40%, #242344 41% 52%, #9a78de 54%);
+}
+.cast-actions {
+  right: var(--inset-x);
+  gap: 13px;
+}
+#study-wild {
+  padding: 8px 13px;
+  font:
+    16px "Pixelify Sans",
+    monospace;
+}
+#capture-hud :disabled {
+  opacity: 0.55;
+}
+#cast-status {
+  position: absolute;
+  bottom: calc(var(--inset-y) + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 12px;
+  border-radius: 20px;
+  background: #17322be8;
+  color: var(--cream);
+  white-space: nowrap;
+}
+#capture-hud:not([data-phase="aim"]) .orb-rack,
+#capture-hud[data-phase="casting"] .cast-actions,
+#capture-hud[data-phase="casting"] #leave-catch {
+  visibility: hidden;
+}
+#capture-hud[data-phase="caught"] #cast-status {
+  color: #ffdf87;
+}
+#capture-hud[data-phase="caught"] {
+  inset: max(16px, env(safe-area-inset-top)) auto auto 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 5px 6px 5px 14px;
+  border-radius: 14px;
+  border: 1px solid #bcac72;
+  background: var(--glass);
+  box-shadow: 0 4px 12px #13271e40;
+}
+#capture-hud[data-phase="caught"] :is(.quarry, #leave-catch, .orb-rack) {
+  display: none;
+}
+#capture-hud[data-phase="caught"] #cast-status {
+  order: -1;
+  position: static;
+  transform: none;
+  padding: 0;
+  background: transparent;
+}
+#capture-hud[data-phase="caught"] .cast-actions {
+  position: static;
+}
+#capture-hud[data-phase="caught"] #throw-wild {
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 15px;
+  box-shadow: none;
+}
+body:has(#capture-hud[data-phase="caught"]:not([hidden])) #trail-target {
+  visibility: hidden;
+}
+#capture-hud[data-phase="escaped"] #cast-status {
+  color: #c3e8fb;
+}
+@media (pointer: coarse) {
+  #hud {
+    --inset-x: max(14px, env(safe-area-inset-right));
+    --inset-y: max(12px, env(safe-area-inset-bottom));
+  }
+  #hud .actions {
+    bottom: calc(var(--inset-y) + 62px);
+  }
+  #hud .field-belt {
+    gap: 8px;
+  }
+  #hud .kit-content {
+    bottom: auto;
+    top: calc(100% + 5px);
+    max-height: calc(100dvh - 127px);
+  }
+}
+@media (max-width: 620px) {
+  #capture-hud[data-phase="aim"] #cast-status {
+    bottom: calc(var(--inset-y) + 56px);
+  }
+  #hud .field-belt #active-label {
+    display: none;
+  }
+}
+@media (hover: hover) and (pointer: fine) {
+  #hud button:not(:disabled):hover,
+  #hud summary:hover {
+    filter: brightness(1.12);
+  }
+}
+#world-names {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.world-name {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 3px 8px;
+  border: 1px solid #a5ddc694;
+  border-radius: 4px;
+  background: #102824eb;
+  color: #e9fff5;
+  font: 700 14px/1 "Pixelify Sans", monospace;
+  white-space: nowrap;
+}
+.world-name.guest {
+  border-color: #e4c7899e;
+  color: #ffe5a4;
+}
+body.at-title #world-names,
+body.in-encounter #world-names,
+body.pvp-mode #world-names,
+body.pvp-mode #hud,
+body.pvp-mode #world,
+body.guest-mode #hud :is(
+  [data-open="collection"], [data-open="lab"], [data-open="market"],
+  [data-open="missions"], [data-open="arena"], [data-open="shop"],
+  #active-shortcut, #missions, #ranger-level, #shard-count, .shard-symbol,
+  [data-orb="focus"]
+) {
+  display: none;
+}
+body.pvp-mode:not(.at-title) {
+  background: #142820 url("/art/forest-guardian.webp") center/cover no-repeat fixed;
+}
+.arena-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+

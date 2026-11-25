@@ -1,0 +1,6 @@
+[programs.devnet]
+wildhatch = "BUfh4GsJjyH52oLkgyG3U2UT7qJwo6opLDmEUW4w7PpJ"
+
+[provider]
+cluster = "Devnet"
+wallet = "~/.config/solana/id.json"
