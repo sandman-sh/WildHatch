@@ -257,19 +257,24 @@ export function selectCompanion(beast?: Beast) {
   );
   scene.add(companion);
 }
+export function playerHeading() {
+  return player.rotation.y;
+}
 export function availableHabitats() {
   const { x, z } = player.position;
   const signals = new Set([...wild.keys(), ...nearbySites(x, z)]);
   return [...signals]
     .filter((i) => !spent.has(i))
     .map((i) => {
-      const [name, x, z] = habitatAt(i)!;
+      const [name, hx, hz] = habitatAt(i)!;
+      const dx = hx - x,
+        dz = hz - z;
       return {
         i,
         name,
-        distance: Math.round(
-          Math.hypot(x - player.position.x, z - player.position.z),
-        ),
+        dx,
+        dz,
+        distance: Math.round(Math.hypot(dx, dz)),
       };
     })
     .sort((a, b) => a.distance - b.distance);

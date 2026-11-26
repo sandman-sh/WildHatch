@@ -42,6 +42,7 @@ import {
   trackedHabitat,
   trackHabitat,
   trackPlace,
+  playerHeading,
 } from "./exploration";
 import type { BeastFigure } from "./models";
 import {
@@ -662,24 +663,261 @@ function display(key: string, collectibleMint?: string) {
     button("Settings", () => display("settings"));
   }
   if (key === "scan") {
-    line("h2", "Habitat scanner");
-    line(
-      "p",
-      "Track a signal on your atlas and approach within 7 m to catch the beast.",
-    );
-    for (const h of availableHabitats())
+    line("h2", "Habitat radar");
+    const elementColors: Record<string, string> = {
+      Nature: "#86ef96",
+      Fire: "#ff9068",
+      Water: "#67d8ff",
+      Ice: "#b8f4ff",
+      Crystal: "#daa8ff",
+    };
+    const wrap = document.createElement("div");
+    wrap.className = "radar-wrap";
+    const canvas = document.createElement("canvas");
+    canvas.className = "radar-scope";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", "Real-time habitat radar scope");
+    const targetCard = document.createElement("div");
+    targetCard.className = "radar-target";
+    const legend = document.createElement("div");
+    legend.className = "radar-legend";
+    for (const [el, color] of Object.entries(elementColors)) {
+      const dot = document.createElement("span");
+      dot.style.setProperty("--dot", color);
+      dot.title = el;
+      dot.innerHTML = "<i></i>" + el;
+      legend.append(dot);
+    }
+    const actions = document.createElement("div");
+    actions.className = "radar-actions";
+    wrap.append(canvas, legend, targetCard, actions);
+    content.append(wrap);
+
+    const maxRange = 105;
+    let plotted: { i: number; sx: number; sy: number; name: string; distance: number }[] = [];
+
+    function renderTargetCard() {
+      const signals = availableHabitats();
+      const locked =
+        signals.find((s) => s.i === trackedHabitat) ?? signals[0];
+      targetCard.replaceChildren();
+      actions.replaceChildren();
+      if (!locked) {
+        targetCard.hidden = true;
+        return;
+      }
+      targetCard.hidden = false;
+      const isTracked = locked.i === trackedHabitat;
+      const img = document.createElement("img");
+      img.src = "/beast-portraits/" + locked.name + ".webp";
+      img.alt = locked.name;
+      const info = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = locked.name;
+      const el = elements[locked.name] ?? "Nature";
+      const sub = document.createElement("small");
+      const dir = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][
+        (Math.round(Math.atan2(locked.dx, -locked.dz) / (Math.PI / 4)) + 8) % 8
+      ];
+      sub.textContent =
+        el + " · " + locked.distance + " m " + dir + (isTracked ? " · Locked" : "");
+      const bar = document.createElement("progress");
+      bar.max = maxRange;
+      bar.value = Math.max(4, maxRange - Math.min(maxRange, locked.distance));
+      info.append(name, sub, bar);
+      targetCard.style.setProperty("--dot", elementColors[el] ?? "#a9f1c8");
+      targetCard.append(img, info);
+
       button(
-        h.name + " · " + elements[h.name] + " · " + h.distance + " m",
+        isTracked ? "Go to signal" : "Lock signal",
         () => {
-          trackHabitat(h.i);
+          trackHabitat(locked.i);
+          gameAudio.play("ui");
           close();
         },
+        true,
+        actions,
       );
-    if (trackedHabitat >= 0)
-      button("Clear tracking", () => {
-        trackHabitat(-1);
-        close();
-      });
+      if (trackedHabitat >= 0) {
+        button(
+          "Clear",
+          () => {
+            trackHabitat(-1);
+            renderTargetCard();
+          },
+          false,
+          actions,
+        );
+      }
+    }
+    renderTargetCard();
+
+    canvas.onclick = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const px = event.clientX - rect.left,
+        py = event.clientY - rect.top;
+      let best: (typeof plotted)[number] | undefined;
+      let bestDist = 26;
+      for (const item of plotted) {
+        const d = Math.hypot(item.sx - px, item.sy - py);
+        if (d < bestDist) {
+          bestDist = d;
+          best = item;
+        }
+      }
+      if (!best) return;
+      trackHabitat(best.i);
+      gameAudio.play("ui");
+      renderTargetCard();
+    };
+
+    let radarRaf = 0;
+    const drawRadar = (now: number) => {
+      radarRaf = requestAnimationFrame(drawRadar);
+      const cssSize = Math.max(180, Math.round(canvas.clientWidth || 280));
+      const dpr = Math.min(devicePixelRatio || 1, 2);
+      const pixelSize = Math.round(cssSize * dpr);
+      if (canvas.width !== pixelSize || canvas.height !== pixelSize) {
+        canvas.width = pixelSize;
+        canvas.height = pixelSize;
+      }
+      const g = canvas.getContext("2d")!;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const cx = cssSize / 2,
+        cy = cssSize / 2,
+        radius = cssSize / 2 - 10;
+      g.clearRect(0, 0, cssSize, cssSize);
+
+      // Emerald sonar backdrop
+      const bg = g.createRadialGradient(cx, cy, 4, cx, cy, radius);
+      bg.addColorStop(0, "#1c493c");
+      bg.addColorStop(0.65, "#112d25");
+      bg.addColorStop(1, "#0b1d18");
+      g.beginPath();
+      g.arc(cx, cy, radius, 0, Math.PI * 2);
+      g.fillStyle = bg;
+      g.fill();
+
+      // Concentric range rings & crosshairs
+      g.strokeStyle = "#7ed9b433";
+      g.lineWidth = 1;
+      for (const f of [0.25, 0.5, 0.75, 1]) {
+        g.beginPath();
+        g.arc(cx, cy, radius * f, 0, Math.PI * 2);
+        g.stroke();
+      }
+      g.beginPath();
+      g.moveTo(cx - radius, cy);
+      g.lineTo(cx + radius, cy);
+      g.moveTo(cx, cy - radius);
+      g.lineTo(cx, cy + radius);
+      g.stroke();
+
+      // Sweeping radar beam (clockwise)
+      const sweep = ((now * 0.0022) % (Math.PI * 2)) - Math.PI / 2;
+      const trail = 1.05;
+      const steps = 18;
+      for (let s = 0; s < steps; s++) {
+        const a0 = sweep - (trail * (s + 1)) / steps;
+        const a1 = sweep - (trail * s) / steps;
+        g.beginPath();
+        g.moveTo(cx, cy);
+        g.arc(cx, cy, radius, a0, a1);
+        g.closePath();
+        g.fillStyle = `rgba(142, 247, 198, ${(1 - s / steps) * 0.24})`;
+        g.fill();
+      }
+      g.beginPath();
+      g.moveTo(cx, cy);
+      g.lineTo(cx + Math.cos(sweep) * radius, cy + Math.sin(sweep) * radius);
+      g.strokeStyle = "#b4ffd9";
+      g.lineWidth = 2;
+      g.stroke();
+
+      // Plot live habitat blips
+      const signals = availableHabitats();
+      plotted = [];
+      for (const h of signals) {
+        const dist = Math.hypot(h.dx, h.dz);
+        const clamped = Math.min(dist, maxRange - 4);
+        const angle = Math.atan2(h.dz, h.dx);
+        const bx = cx + (Math.cos(angle) * (clamped / maxRange) * (radius - 6));
+        const by = cy + (Math.sin(angle) * (clamped / maxRange) * (radius - 6));
+        plotted.push({ i: h.i, sx: bx, sy: by, name: h.name, distance: h.distance });
+
+        let delta = (sweep - angle) % (Math.PI * 2);
+        if (delta < 0) delta += Math.PI * 2;
+        const ping = Math.max(0, 1 - delta / 1.4);
+        const col = elementColors[elements[h.name] ?? "Nature"] ?? "#a9f1c8";
+
+        if (ping > 0.05) {
+          g.beginPath();
+          g.arc(bx, by, 4 + (1 - ping) * 10, 0, Math.PI * 2);
+          g.strokeStyle = col;
+          g.globalAlpha = ping * 0.75;
+          g.lineWidth = 1.5;
+          g.stroke();
+          g.globalAlpha = 1;
+        }
+        g.beginPath();
+        g.arc(bx, by, h.i === trackedHabitat ? 5.2 : 3.4 + ping * 1.4, 0, Math.PI * 2);
+        g.fillStyle = col;
+        g.fill();
+        if (dist > maxRange - 4) {
+          g.strokeStyle = "#fff6cf88";
+          g.lineWidth = 1;
+          g.stroke();
+        }
+        if (h.i === trackedHabitat) {
+          const rot = now * 0.003;
+          g.save();
+          g.translate(bx, by);
+          g.rotate(rot);
+          g.strokeStyle = "#ffeaa4";
+          g.lineWidth = 1.8;
+          g.strokeRect(-7, -7, 14, 14);
+          g.restore();
+        }
+      }
+
+      // Player heading cone & chevron at center
+      const heading = -playerHeading();
+      g.save();
+      g.translate(cx, cy);
+      g.rotate(heading);
+      g.beginPath();
+      g.moveTo(0, -18);
+      g.lineTo(-10, -4);
+      g.lineTo(10, -4);
+      g.closePath();
+      g.fillStyle = "rgba(255, 234, 164, 0.18)";
+      g.fill();
+      g.beginPath();
+      g.moveTo(0, -8);
+      g.lineTo(6, 6);
+      g.lineTo(0, 3);
+      g.lineTo(-6, 6);
+      g.closePath();
+      g.fillStyle = "#ffeaa4";
+      g.fill();
+      g.restore();
+
+      // Cardinal ticks
+      g.fillStyle = "#c8e6cfbb";
+      g.font = "700 10px Pixelify Sans, monospace";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText("N", cx, 13);
+      g.fillText("S", cx, cssSize - 13);
+      g.fillText("E", cssSize - 13, cy);
+      g.fillText("W", 13, cy);
+    };
+    radarRaf = requestAnimationFrame(drawRadar);
+    const prevStop = previewStop;
+    previewStop = () => {
+      cancelAnimationFrame(radarRaf);
+      prevStop();
+    };
   }
   if (key === "map") button("Track a habitat", () => display("scan"));
   if (key === "lab") {
