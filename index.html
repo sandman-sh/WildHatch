@@ -155,6 +155,7 @@
         <symbol id="icon-jump" viewBox="0 0 24 24"><path d="M5 20h14M12 16V4m-6 6 6-6 6 6"/></symbol>
         <symbol id="icon-grid" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z"/></symbol>
         <symbol id="icon-exit" viewBox="0 0 24 24"><path d="M19 12H5m6-6-6 6 6 6"/></symbol>
+        <symbol id="icon-power" viewBox="0 0 24 24"><path d="M12 3v9m5.6-6.6a8 8 0 1 1-11.2 0"/></symbol>
       </svg>
       <section class="location">
         <small id="field-mode-label">WILDHATCH</small>
@@ -196,6 +197,8 @@
           <button data-open="arena">Arena [B]</button
           ><button data-open="settings">Settings</button>
           <button data-open="shop">Wild shop</button>
+          <button id="kit-menu" class="kit-nav" type="button">Main menu</button
+          ><button id="kit-quit" class="kit-nav kit-quit" type="button">Quit game</button>
         </div>
       </details>
       <div class="field-belt" aria-label="Field shortcuts">
@@ -246,6 +249,14 @@
       <output id="panel-notice" role="status"></output>
     </dialog>
     <output id="toast" aria-live="polite"></output>
+    <section id="quit-screen" hidden aria-labelledby="quit-title">
+      <div>
+        <small>WILDHATCH</small>
+        <h2 id="quit-title">Expedition ended</h2>
+        <p>Your progress has been saved safely. You can close this tab or return to the main menu anytime.</p>
+        <button id="quit-return" class="primary" type="button">Return to main menu</button>
+      </div>
+    </section>
     <dialog
       id="rotate-device"
       aria-labelledby="rotate-title"

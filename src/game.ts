@@ -30,10 +30,13 @@ import {
   relocate,
   setHabitats,
   removeWild,
+  respawnWild,
   updateGuardian,
   showAtlas,
   ferryRoute,
   selectCompanion,
+  enterPvpRoom,
+  exitPvpRoom,
   setWorldIdentity,
   availableHabitats,
   trackedHabitat,
@@ -46,6 +49,7 @@ import {
   elements,
   rarities,
   beastStats,
+  beastPower,
   inheritedMutation,
 } from "./shared";
 import { fieldRanger, rangerFor, setWalletRoster } from "./rangers";
@@ -264,9 +268,13 @@ function journal() {
           : a.name.localeCompare(b.name),
   );
   for (const b of beasts) {
-    const card = document.createElement("button");
+    const active = b.id === profile.active;
+    const card = document.createElement("div");
     card.className = "beast-card";
     card.dataset.rarity = b.rarity;
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "beast-card-open";
     const img = document.createElement("img");
     img.src = "/beast-portraits/" + b.name + ".webp";
     img.alt = "";
@@ -275,12 +283,16 @@ function journal() {
     title.textContent = b.name;
     const meta = document.createElement("small");
     meta.textContent =
-      b.rarity +
-      " · Lv " +
-      b.level +
-      (b.id === profile.active ? " · Active" : "");
-    card.append(img, title, meta);
-    card.onclick = () => inspect(b);
+      b.rarity + " · Lv " + b.level + " · PWR " + beastPower(b);
+    open.append(img, title, meta);
+    open.onclick = () => inspect(b);
+    const follow = document.createElement("button");
+    follow.type = "button";
+    follow.className = active ? "beast-follow active" : "beast-follow";
+    follow.textContent = active ? "Following" : "Follow me";
+    follow.disabled = active;
+    follow.onclick = () => swapCompanion(b);
+    card.append(open, follow);
     cards.append(card);
   }
   if (!beasts.length) line("p", "No beasts at this evolution stage.");
@@ -298,10 +310,24 @@ const studyButton = find<HTMLButtonElement>("#study-wild");
 const leaveButton = find<HTMLButtonElement>("#leave-catch");
 const orbButtons = [...field.querySelectorAll<HTMLButtonElement>("[data-orb]")];
 let catchesBeast: Beast | undefined;
+let pendingRespawn: { index: number; variant?: number } | undefined;
+function swapCompanion(b: Beast) {
+  if (!profile || b.id === profile.active) return;
+  gameAudio.play("ui");
+  profile.active = b.id;
+  selectCompanion(b);
+  hud();
+  if (view === "collection" || view === "detail") display(view);
+  send("active", b.id);
+  notice(b.name + " is now following you.");
+}
 function leaveCapture() {
   clearTimeout(throwTimer);
   fieldCapture.stop();
-  if (catchesBeast) removeWild(offer.index);
+  if (pendingRespawn) {
+    respawnWild(pendingRespawn.index, pendingRespawn.variant);
+    pendingRespawn = undefined;
+  } else if (catchesBeast) removeWild(offer.index);
   field.hidden = true;
   document.body.classList.remove("in-encounter");
   phase = null;
@@ -425,7 +451,8 @@ function actOnCapture() {
 }
 function resolveThrow(result: string, data: any) {
   if (phase !== "casting") {
-    if (result === "caught" && !data.practice) removeWild(data.index);
+    if (result === "caught")
+      respawnWild(data.index, data.respawnVariant);
     return;
   }
   clearTimeout(throwTimer);
@@ -435,10 +462,14 @@ function resolveThrow(result: string, data: any) {
     return;
   }
   const outcome = result === "caught" ? "caught" : "escaped";
-  if (outcome === "caught" && !data.practice) catchesBeast = data.beast;
+  if (outcome === "caught") {
+    if (!data.practice) catchesBeast = data.beast;
+    pendingRespawn = { index: data.index, variant: data.respawnVariant };
+  }
   fieldCapture.resolve(outcome, () => {
     if (outcome === "caught") {
-      if (!data.practice) removeWild(data.index);
+      if (!data.practice)
+        respawnWild(data.index, data.respawnVariant);
       gameAudio.play(
         rarities.indexOf(data.beast.rarity) >= 2 ? "rare" : "capture",
       );
@@ -748,6 +779,7 @@ function display(key: string, collectibleMint?: string) {
       Attack: stats.attack,
       Defense: stats.defense,
       Speed: stats.speed,
+      Power: beastPower(b),
     })) {
       const stat = line("div", "", attributes);
       line("dt", label, stat);
@@ -771,8 +803,8 @@ function display(key: string, collectibleMint?: string) {
     const actions = line("div", "");
     actions.className = "beast-actions";
     button(
-      b.id === profile.active ? "Active companion" : "Set active",
-      () => send("active", b.id),
+      b.id === profile.active ? "Following you" : "Follow me",
+      () => swapCompanion(b),
       false,
       actions,
     ).disabled = b.id === profile.active;
@@ -1183,15 +1215,25 @@ function display(key: string, collectibleMint?: string) {
     if (battle) {
       const d = battle;
       line("h2", "Arena duel");
+      if (d.room) {
+        const roomTag = line("small", "Private PvP Room · " + d.room);
+        roomTag.className = "arena-room-tag";
+      }
       line("p", d.players.join("  vs  "));
       preview(d.names, "duel");
       const vitals = document.createElement("div");
       vitals.className = "duel-vitals";
       content.append(vitals);
       d.names.forEach((b: Beast, i: number) => {
+        const stats = beastStats(b);
         const label = document.createElement("strong");
         label.textContent =
           b.name +
+          " (" +
+          b.rarity +
+          " · ATK " +
+          stats.attack +
+          ")" +
           (i === d.you ? " · You" : " · Opponent") +
           " · " +
           d.hp[i] +
@@ -1273,10 +1315,12 @@ function display(key: string, collectibleMint?: string) {
       if (mode === "pvp") {
         const links = line("div", "");
         links.className = "arena-links";
+        button("Beasts", () => display("collection"), false, links);
         button("Wild shop", () => display("shop"), false, links);
         button("Profile", () => display("profile"), false, links);
         button("Settings", () => display("settings"), false, links);
-        button("Main menu", () => location.reload(), false, links);
+        button("Main menu", () => void leaveToMenu(), false, links);
+        button("Quit game", () => void quitGame(), false, links);
       } else if (siteAction() === "boss")
         button("Challenge the Green Dragon", () => send("boss"));
       else
@@ -1352,13 +1396,52 @@ function display(key: string, collectibleMint?: string) {
         duelResult.startsWith("Victory") ? "victory" : "hit",
       );
     button("Battle arena", () => display("arena"), true);
-    if (mode === "pvp") button("Main menu", () => location.reload());
-    else button("Back to the trail", close);
+    if (mode === "pvp") {
+      button("Main menu", () => void leaveToMenu());
+      button("Quit game", () => void quitGame());
+    } else button("Back to the trail", close);
   }
 }
 export function enterArena() {
   display("arena");
 }
+async function leaveToMenu() {
+  if (panel.open) panel.close();
+  if (phase || waitingOffer) leaveCapture();
+  await connection?.leaveNow();
+  location.reload();
+}
+async function quitGame() {
+  if (panel.open) panel.close();
+  if (phase || waitingOffer) leaveCapture();
+  freeze(true);
+  await connection?.leaveNow();
+  sessionReady = false;
+  window.close();
+  find("#quit-screen").hidden = false;
+}
+find("#quit-return").onclick = () => location.reload();
+function wireKitButton(
+  button: HTMLButtonElement,
+  icon: string,
+  label: string,
+  action: () => void,
+) {
+  button.title = label;
+  button.innerHTML =
+    '<svg class="hud-icon" aria-hidden="true"><use href="#icon-' +
+    icon +
+    '"/></svg><span>' +
+    label +
+    "</span>";
+  button.onclick = () => {
+    const kit = button.closest("details");
+    if (kit) kit.open = false;
+    action();
+  };
+}
+wireKitButton(find("#kit-menu"), "exit", "Main menu", () => void leaveToMenu());
+wireKitButton(find("#kit-quit"), "power", "Quit game", () => void quitGame());
 document
   .querySelectorAll<HTMLButtonElement>("[data-open]")
   .forEach((button) => {
@@ -1687,6 +1770,8 @@ export async function joinExpedition(playMode = mode) {
           queued = false;
           invitation = null;
           battle = data;
+          document.body.classList.add("in-duel");
+          enterPvpRoom(data.room ?? "PVP-ARENA", data);
           gameAudio.play(
             battle.lastMove ? battleSound(battle.lastMove.name) : "duelStart",
           );
@@ -1699,6 +1784,8 @@ export async function joinExpedition(playMode = mode) {
             battle?.names[battle.you] ??
             profile.collection.find((b) => b.id === profile.active);
           battle = null;
+          document.body.classList.remove("in-duel");
+          exitPvpRoom(mode === "pvp");
           display("duel-result");
           break;
       }

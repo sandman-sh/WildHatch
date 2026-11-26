@@ -365,19 +365,50 @@ body:has(#capture-hud[data-phase="caught"]:not([hidden])) #trail-target {
 }
 @media (pointer: coarse) {
   #hud {
-    --inset-x: max(14px, env(safe-area-inset-right));
+    --inset-x: max(12px, env(safe-area-inset-right));
     --inset-y: max(12px, env(safe-area-inset-bottom));
   }
+  #hud .location {
+    left: max(12px, env(safe-area-inset-left));
+    top: max(10px, env(safe-area-inset-top));
+    max-width: min(50vw, 240px);
+    pointer-events: none;
+  }
+  #hud #trail-target:not(:empty) {
+    position: static;
+    transform: none;
+    display: inline-block;
+    margin-top: 3px;
+    padding: 2px 6px;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+  #hud .field-tools {
+    left: auto;
+    right: calc(var(--inset-x) + 78px);
+    top: max(10px, env(safe-area-inset-top));
+    bottom: auto;
+    z-index: 6;
+  }
   #hud .actions {
-    bottom: calc(var(--inset-y) + 62px);
+    bottom: calc(var(--inset-y) + 58px);
   }
   #hud .field-belt {
-    gap: 8px;
+    gap: 6px;
+    max-width: calc(100vw - 204px);
   }
   #hud .kit-content {
+    right: 0;
+    left: auto;
     bottom: auto;
-    top: calc(100% + 5px);
-    max-height: calc(100dvh - 127px);
+    top: calc(100% + 6px);
+    width: min(268px, calc(100vw - 24px));
+    max-height: calc(
+      100dvh - 82px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+    );
   }
 }
 @media (max-width: 620px) {
@@ -418,9 +449,10 @@ body:has(#capture-hud[data-phase="caught"]:not([hidden])) #trail-target {
 }
 body.at-title #world-names,
 body.in-encounter #world-names,
+body.in-duel #world-names,
+body.in-duel #hud > :not(.field-tools),
 body.pvp-mode #world-names,
-body.pvp-mode #hud,
-body.pvp-mode #world,
+body.pvp-mode #hud > :not(.field-tools),
 body.guest-mode #hud :is(
   [data-open="collection"], [data-open="lab"], [data-open="market"],
   [data-open="missions"], [data-open="arena"], [data-open="shop"],
@@ -429,8 +461,49 @@ body.guest-mode #hud :is(
 ) {
   display: none;
 }
-body.pvp-mode:not(.at-title) {
-  background: #142820 url("/art/forest-guardian.webp") center/cover no-repeat fixed;
+#hud .kit-content .kit-nav {
+  background: #233c34;
+  border-color: #93b09b55;
+}
+#hud .kit-content .kit-quit {
+  background: #3d2428;
+  border-color: #d98f9155;
+}
+#hud .kit-content .kit-quit .hud-icon {
+  color: #f4a4a6;
+}
+#quit-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: #0e201bf2;
+  color: #f8efd2;
+  text-align: center;
+}
+#quit-screen[hidden] {
+  display: none;
+}
+#quit-screen > div {
+  max-width: 420px;
+  padding: 24px 28px;
+  background: #172e26;
+  border: 1px solid #8ea68b6b;
+  border-radius: 12px;
+}
+#quit-screen small {
+  color: #b7d8b5;
+}
+.arena-room-tag {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 3px 9px;
+  border: 1px solid #7cdcc088;
+  border-radius: 4px;
+  background: #132c25;
+  color: #9ff0d6;
 }
 .arena-links {
   display: flex;

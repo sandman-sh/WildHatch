@@ -66,13 +66,26 @@ export type Beast = {
   marking?: string;
   mutation?: string;
 };
-export function beastStats(b: Pick<Beast, "level" | "variant" | "stage">) {
+export function rarityTier(rarity?: string) {
+  return Math.max(0, rarities.indexOf(rarity ?? "Normal"));
+}
+export function beastStats(
+  b: Pick<Beast, "level" | "variant" | "stage"> & { rarity?: string },
+) {
+  const tier = rarityTier(b.rarity);
+  const baseHealth = 30 + b.level * 4 + (b.stage - 1) * 4;
   return {
-    health: 30 + b.level * 4 + (b.stage - 1) * 4,
-    attack: 5 + b.level + ((b.variant >>> 8) % 3) + b.stage - 1,
-    defense: (b.variant >>> 4) % 3,
-    speed: 4 + (b.variant % 3),
+    health: Math.round(baseHealth * (1 + tier * 0.14)),
+    attack: 5 + b.level + ((b.variant >>> 8) % 3) + b.stage - 1 + tier * 2,
+    defense: ((b.variant >>> 4) % 3) + Math.floor(tier / 2),
+    speed: 4 + (b.variant % 3) + tier,
   };
+}
+export function beastPower(
+  b: Pick<Beast, "level" | "variant" | "stage"> & { rarity?: string },
+) {
+  const s = beastStats(b);
+  return s.health + s.attack * 3 + s.defense * 2 + s.speed * 2;
 }
 export function inheritedMutation(first: string, second: string) {
   const pair = [elements[first], elements[second]].sort().join("/");

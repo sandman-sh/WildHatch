@@ -37476,12 +37476,17 @@ var rarities = [
   "Legendary",
   "Mythic"
 ];
+function rarityTier(rarity) {
+  return Math.max(0, rarities.indexOf(rarity ?? "Normal"));
+}
 function beastStats(b) {
+  const tier = rarityTier(b.rarity);
+  const baseHealth = 30 + b.level * 4 + (b.stage - 1) * 4;
   return {
-    health: 30 + b.level * 4 + (b.stage - 1) * 4,
-    attack: 5 + b.level + (b.variant >>> 8) % 3 + b.stage - 1,
-    defense: (b.variant >>> 4) % 3,
-    speed: 4 + b.variant % 3
+    health: Math.round(baseHealth * (1 + tier * 0.14)),
+    attack: 5 + b.level + (b.variant >>> 8) % 3 + b.stage - 1 + tier * 2,
+    defense: (b.variant >>> 4) % 3 + Math.floor(tier / 2),
+    speed: 4 + b.variant % 3 + tier
   };
 }
 function inheritedMutation(first, second) {
@@ -38808,23 +38813,42 @@ async function openWorld(query, scope) {
     const beasts = await Promise.all(pair.map(active));
     const stats = beasts.map(beastStats);
     const max = stats.map((b) => b.health);
+    const id = randomUUID3();
+    const usedZones = new Set([...duels.values()].map((item) => item.roomZone));
+    let roomZone = 1e3 + randomInt2(89e4);
+    while (usedZones.has(roomZone)) roomZone = 1e3 + randomInt2(89e4);
+    const room = "PVP-" + id.slice(0, 6).toUpperCase();
     const d = {
-      id: randomUUID3(),
+      id,
+      room,
+      roomZone,
+      returnTo: pair.map((p) => ({
+        zone: p.zone,
+        x: p.x,
+        z: p.z,
+        yaw: p.yaw
+      })),
       peers: pair,
       hp: [...max],
       max,
       turn: stats[1].speed + beasts[1].level > stats[0].speed + beasts[0].level ? 1 : 0,
       guard: [false, false],
       burn: [0, 0],
-      log: ["The duel begins."],
+      log: ["Private arena " + room + " opened. The duel begins."],
       expires: Date.now() + 45e3
     };
-    for (const p of pair) {
+    pair.forEach((p, idx) => {
       p.queue = false;
       p.invitation = void 0;
       p.encounter = null;
       p.battle = d.id;
-    }
+      if (p.mode === "pvp") {
+        p.zone = roomZone;
+        p.x = idx === 0 ? -5 : 5;
+        p.z = 0;
+        p.yaw = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
+      }
+    });
     duels.set(d.id, d);
     await battleView(d);
   }
@@ -38832,6 +38856,8 @@ async function openWorld(query, scope) {
     const names = await Promise.all(d.peers.map(active));
     d.peers.forEach(
       (p, i) => send(p, "battle", {
+        room: d.room,
+        roomZone: d.roomZone,
         names,
         players: d.peers.map((q) => q.name),
         hp: d.hp,
@@ -38860,10 +38886,20 @@ async function openWorld(query, scope) {
     await save(d.peers[winner].t, p);
     await query("INSERT INTO battles VALUES ($1, $2)", [
       d.id,
-      JSON.stringify({ winner: d.peers[winner].id, log: d.log })
+      JSON.stringify({ winner: d.peers[winner].id, room: d.room, log: d.log })
     ]);
     for (const [i, p2] of d.peers.entries()) {
       p2.battle = null;
+      const origin = d.returnTo?.[i];
+      if (origin) {
+        p2.zone = origin.zone;
+        p2.x = origin.x;
+        p2.z = origin.z;
+        p2.yaw = origin.yaw;
+      } else {
+        p2.zone = p2.mode === "pvp" ? 0 : 1;
+      }
+      if (p2.zone === 1) send(p2, "position", [p2.x, p2.z]);
       send(
         p2,
         "end",
@@ -39119,12 +39155,15 @@ async function openWorld(query, scope) {
       if (!h || p.spent.has(data) || Math.hypot(p.x - h[1], p.z - h[2]) > 7)
         return;
       p.studied = false;
-      p.discovery = p.wild[data] ?? beast(h[0]);
-      if (!p.wild[data]) {
+      const existing = p.wild[data] ?? p.respawned?.[data];
+      p.discovery = existing ?? beast(h[0]);
+      if (!existing) {
         p.discovery.variant = Math.floor(sample(data, 0, 31) * 65536);
         const roll = sample(data, 0, 32) * 1e3;
         p.discovery.rarity = rarities[[580, 830, 950, 990, 998, 1e3].findIndex((n) => roll < n)];
         p.discovery.personality = ["Curious", "Bold", "Patient", "Playful"][Math.floor(sample(data, 0, 33) * 4)];
+        p.respawned ??= {};
+        p.respawned[data] = p.discovery;
       }
       p.encounter = data;
       send(p, "encounter", encounterOffer(p, data, a));
@@ -39217,8 +39256,11 @@ async function openWorld(query, scope) {
       let damage = 0;
       if (data === "Guard") d.guard[i] = true;
       else {
-        damage = beastStats(b).attack - beastStats(foe).defense + (data === "Pulse" ? strong[elements[b.name]] === elements[foe.name] ? 6 : 1 : data === "Strike" ? 3 : 0);
-        if (d.guard[j]) damage = Math.ceil(damage / 2);
+        damage = Math.max(
+          1,
+          beastStats(b).attack - beastStats(foe).defense + (data === "Pulse" ? strong[elements[b.name]] === elements[foe.name] ? 6 : 1 : data === "Strike" ? 3 : 0)
+        );
+        if (d.guard[j]) damage = Math.max(1, Math.ceil(damage / 2));
         d.guard[j] = false;
         if (data === "Scorch") d.burn[j] = 2;
       }
@@ -39307,13 +39349,24 @@ async function openWorld(query, scope) {
       if (a.charms) a.charms--;
       if (randomInt2(100) < (cost === 2 ? odds.focusChance : odds.chance)) {
         const b = p.discovery;
+        const species = habitatAt(i)[0];
+        const respawn = beast(species);
+        if (i < habitats.length) p.wild[i] = respawn;
+        else {
+          p.respawned ??= {};
+          p.respawned[i] = respawn;
+        }
         if (!guestProfile) {
           a.collection.push(b);
-          p.spent.add(i);
           capture(a);
           a.rangerXp = (a.rangerXp ?? 0) + 10;
         }
-        send(p, "caught", { index: i, beast: b, practice: !!guestProfile });
+        send(p, "caught", {
+          index: i,
+          beast: b,
+          practice: !!guestProfile,
+          respawnVariant: respawn.variant
+        });
       } else send(p, "escaped", { index: i, cost });
     } else if (type === "claim") {
       if (!claim(a, data)) return;

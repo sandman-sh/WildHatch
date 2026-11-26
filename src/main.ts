@@ -311,8 +311,11 @@ async function launch() {
     menu.hidden = true;
     loading.hidden = true;
     document.body.classList.remove("at-title");
-    if (mode === "pvp") game.enterArena();
-    else {
+    if (mode === "pvp") {
+      world.setPvpLobby();
+      world.startExploring();
+      game.enterArena();
+    } else {
       world.startExploring();
       const canvas = document.querySelector<HTMLCanvasElement>("#world")!;
       canvas.tabIndex = -1;

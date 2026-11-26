@@ -199,12 +199,28 @@ export function connectWorld(
     }
   }
 
+  async function leaveNow() {
+    if (closed) return;
+    close();
+    try {
+      await fetch("/api/world", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: "leave", mode, client, guest: guestKey }),
+        signal: AbortSignal.timeout(2500),
+      });
+    } catch {
+      // Reloading or quitting proceeds even if the server leave beacon times out.
+    }
+  }
+
   return {
     get ready() {
       return ready;
     },
     start,
     close,
+    leaveNow,
     send(type: string, data?: any) {
       if (!ready || pending.length >= 32) return;
       const previous = pending.at(-1);

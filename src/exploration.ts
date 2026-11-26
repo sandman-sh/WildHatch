@@ -234,7 +234,7 @@ export let nearest = -1;
 let companion: T.Group | undefined,
   companionKey = "";
 const appearanceKey = (b: Beast) =>
-  [b.id, b.stage, b.marking, b.mutation].join("/");
+  [b.id, b.name, b.stage, b.marking, b.mutation].join("/");
 export function selectCompanion(beast?: Beast) {
   const key = beast ? appearanceKey(beast) : "";
   if (key === companionKey) return;
@@ -248,8 +248,13 @@ export function selectCompanion(beast?: Beast) {
   companion = undefined;
   if (!beast) return;
   companion = makeBeastFigure(beast);
-  companion.position.copy(player.position);
-  companion.position.x -= 1.6;
+  const cx = player.position.x - 1.6;
+  const cz = player.position.z + 0.6;
+  companion.position.set(
+    cx,
+    ground(cx, cz) + (companion.userData.flight ? 1.4 : 0),
+    cz,
+  );
   scene.add(companion);
 }
 export function availableHabitats() {
@@ -444,6 +449,13 @@ export function removeWild(i: number) {
   const m = wild.get(i);
   if (m) m.visible = false;
   if (trackedHabitat === i) trackedHabitat = -1;
+}
+export function respawnWild(i: number, variant?: number) {
+  spent.delete(i);
+  dropWild(i);
+  const h = habitatAt(i);
+  if (!h) return;
+  addWild(i, variant ?? Math.floor(Math.random() * 65536));
 }
 function removeRemote(model?: T.Group) {
   if (!model) return;
@@ -762,12 +774,169 @@ function flyAroundHabitat(
   );
   animateModel(model, time, 1, "fly");
 }
+const arenaScene = new T.Scene();
+arenaScene.background = new T.Color(0x132722);
+arenaScene.fog = new T.FogExp2(0x132722, 0.024);
+let arenaMode: "lobby" | "duel" | null = null;
+let arenaRingMat: T.MeshStandardMaterial | undefined;
+let arenaFighters: {
+  group: T.Group;
+  youBeast?: T.Group;
+  foeBeast?: T.Group;
+} | null = null;
+let arenaBuilt = false;
+function buildArenaScene() {
+  if (arenaBuilt) return;
+  arenaBuilt = true;
+  const aHemi = new T.HemisphereLight(0xf6e6be, 0x1a3029, 1.9);
+  const aSun = new T.DirectionalLight(0xffdfa8, 2.2);
+  aSun.position.set(10, 18, 12);
+  const rimLight = new T.PointLight(0x7be0c4, 18, 30);
+  rimLight.position.set(0, 6, 0);
+  arenaScene.add(aHemi, aSun, rimLight);
+
+  const floor = new T.Mesh(
+    new T.CylinderGeometry(11.5, 12.2, 1.2, 32),
+    new T.MeshStandardMaterial({ color: 0x223b32, roughness: 0.85 }),
+  );
+  floor.position.y = -0.6;
+  const innerDeck = new T.Mesh(
+    new T.CylinderGeometry(8.6, 8.6, 0.14, 24),
+    new T.MeshStandardMaterial({ color: 0x2c4b3f, roughness: 0.8 }),
+  );
+  innerDeck.position.y = 0.06;
+  arenaRingMat = new T.MeshStandardMaterial({
+    color: 0x7be0c4,
+    emissive: 0x2f7d69,
+    emissiveIntensity: 0.75,
+    roughness: 0.35,
+  });
+  const runeRing = new T.Mesh(
+    new T.TorusGeometry(6.8, 0.14, 10, 48),
+    arenaRingMat,
+  );
+  runeRing.rotation.x = Math.PI / 2;
+  runeRing.position.y = 0.16;
+  arenaScene.add(floor, innerDeck, runeRing);
+
+  const pillarGeo = new T.BoxGeometry(1.1, 4.6, 1.1);
+  const pillarMat = new T.MeshStandardMaterial({
+    color: 0x1a2d26,
+    roughness: 0.75,
+  });
+  const crystalGeo = new T.OctahedronGeometry(0.55);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const pillar = new T.Mesh(pillarGeo, pillarMat);
+    pillar.position.set(Math.cos(a) * 10.2, 2.2, Math.sin(a) * 10.2);
+    pillar.rotation.y = -a;
+    const crystal = new T.Mesh(crystalGeo, arenaRingMat);
+    crystal.position.set(Math.cos(a) * 10.2, 5.1, Math.sin(a) * 10.2);
+    arenaScene.add(pillar, crystal);
+  }
+  const padGeo = new T.CylinderGeometry(1.9, 2.1, 0.22, 16);
+  const padMat = new T.MeshStandardMaterial({ color: 0x3b6150, roughness: 0.6 });
+  for (const [px, pz] of [
+    [-3.6, 1.6],
+    [3.6, -1.6],
+  ]) {
+    const pad = new T.Mesh(padGeo, padMat);
+    pad.position.set(px, 0.18, pz);
+    arenaScene.add(pad);
+  }
+}
+function clearArenaFighters() {
+  if (!arenaFighters) return;
+  arenaScene.remove(arenaFighters.group);
+  arenaFighters.group.traverse((o) => {
+    if (o instanceof T.Mesh) o.geometry.dispose();
+  });
+  arenaFighters = null;
+}
+export function setPvpLobby() {
+  buildArenaScene();
+  clearArenaFighters();
+  arenaMode = "lobby";
+  if (arenaRingMat) {
+    arenaRingMat.color.setHex(0x88dfc2);
+    arenaRingMat.emissive.setHex(0x286b58);
+  }
+  const group = new T.Group();
+  const me = makeExplorer(fieldRanger);
+  me.position.set(-2.2, 0.28, 1.6);
+  me.rotation.y = 0.6;
+  group.add(me);
+  arenaScene.add(group);
+  arenaFighters = { group };
+}
+export function enterPvpRoom(
+  roomId: string,
+  duel: { names: Beast[]; you: number },
+) {
+  buildArenaScene();
+  clearArenaFighters();
+  arenaMode = "duel";
+  let hash = 0;
+  for (let i = 0; i < roomId.length; i++)
+    hash = (hash * 31 + roomId.charCodeAt(i)) >>> 0;
+  if (arenaRingMat) {
+    const hue = ((hash % 360) / 360);
+    arenaRingMat.color.setHSL(hue, 0.68, 0.62);
+    arenaRingMat.emissive.setHSL(hue, 0.65, 0.25);
+  }
+  const group = new T.Group();
+  const youBeast = makeBeastFigure(duel.names[duel.you]);
+  const foeBeast = makeBeastFigure(duel.names[1 - duel.you]);
+  const youRanger = makeExplorer(fieldRanger);
+  youRanger.position.set(-5.3, 0.28, 2.4);
+  youRanger.lookAt(3.6, 0.3, -1.6);
+  youBeast.position.set(-3.4, 0.3 + (youBeast.userData.flight ? 1.1 : 0), 1.4);
+  youBeast.lookAt(3.4, youBeast.position.y, -1.4);
+  foeBeast.position.set(3.4, 0.3 + (foeBeast.userData.flight ? 1.1 : 0), -1.4);
+  foeBeast.lookAt(-3.4, foeBeast.position.y, 1.4);
+  group.add(youRanger, youBeast, foeBeast);
+  arenaScene.add(group);
+  arenaFighters = { group, youBeast, foeBeast };
+}
+export function exitPvpRoom(keepLobby = false) {
+  clearArenaFighters();
+  arenaMode = keepLobby ? "lobby" : null;
+  if (keepLobby) setPvpLobby();
+}
+
 function frame(now: number) {
   requestAnimationFrame(frame);
   const dt = Math.max(0, Math.min(0.2, (now - prev) / 1000));
   prev = now;
   if (portraitGame.matches) return;
   elapsed += dt;
+  if (arenaMode) {
+    const orbit = elapsed * 0.14;
+    camera.position.set(
+      Math.sin(orbit) * 11.5,
+      5.4,
+      Math.cos(orbit) * 11.5,
+    );
+    camera.lookAt(0, 1.2, 0);
+    if (arenaFighters?.youBeast)
+      animateModel(
+        arenaFighters.youBeast,
+        elapsed,
+        0.2,
+        arenaFighters.youBeast.userData.flight ? "fly" : "idle",
+      );
+    if (arenaFighters?.foeBeast)
+      animateModel(
+        arenaFighters.foeBeast,
+        elapsed + 1.3,
+        0.2,
+        arenaFighters.foeBeast.userData.flight ? "fly" : "idle",
+      );
+    renderer.render(arenaScene, camera);
+    for (const r of remotes.values()) r.label.hidden = true;
+    localName.hidden = true;
+    return;
+  }
   scenery(elapsed, player.position);
   world.update(elapsed, player.position, lastQuality);
   const p = player.position;

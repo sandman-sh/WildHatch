@@ -51,6 +51,7 @@ type Peer = {
   seq: number;
   events: WorldEvent[];
   wild: Beast[];
+  respawned?: Record<number, Beast>;
   discovery?: Beast;
   studied: boolean;
   lastCheckpoint: number;
@@ -76,6 +77,9 @@ type Peer = {
 type Duel = {
   lastMove?: { actor: number; name: string; damage: number };
   id: string;
+  room: string;
+  roomZone: number;
+  returnTo: { zone: number; x: number; z: number; yaw: number }[];
   peers: Peer[];
   hp: number[];
   max: number[];
@@ -175,8 +179,21 @@ export async function openWorld(
     const beasts = await Promise.all(pair.map(active));
     const stats = beasts.map(beastStats);
     const max = stats.map((b) => b.health);
+    const id = randomUUID();
+    const usedZones = new Set([...duels.values()].map((item) => item.roomZone));
+    let roomZone = 1000 + randomInt(890000);
+    while (usedZones.has(roomZone)) roomZone = 1000 + randomInt(890000);
+    const room = "PVP-" + id.slice(0, 6).toUpperCase();
     const d: Duel = {
-      id: randomUUID(),
+      id,
+      room,
+      roomZone,
+      returnTo: pair.map((p) => ({
+        zone: p.zone,
+        x: p.x,
+        z: p.z,
+        yaw: p.yaw,
+      })),
       peers: pair,
       hp: [...max],
       max,
@@ -186,15 +203,21 @@ export async function openWorld(
           : 0,
       guard: [false, false],
       burn: [0, 0],
-      log: ["The duel begins."],
+      log: ["Private arena " + room + " opened. The duel begins."],
       expires: Date.now() + 45000,
     };
-    for (const p of pair) {
+    pair.forEach((p, idx) => {
       p.queue = false;
       p.invitation = undefined;
       p.encounter = null;
       p.battle = d.id;
-    }
+      if (p.mode === "pvp") {
+        p.zone = roomZone;
+        p.x = idx === 0 ? -5 : 5;
+        p.z = 0;
+        p.yaw = idx === 0 ? Math.PI / 2 : -Math.PI / 2;
+      }
+    });
     duels.set(d.id, d);
     await battleView(d);
   }
@@ -202,6 +225,8 @@ export async function openWorld(
     const names = await Promise.all(d.peers.map(active));
     d.peers.forEach((p, i) =>
       send(p, "battle", {
+        room: d.room,
+        roomZone: d.roomZone,
         names,
         players: d.peers.map((q) => q.name),
         hp: d.hp,
@@ -230,10 +255,20 @@ export async function openWorld(
     await save(d.peers[winner].t, p);
     await query("INSERT INTO battles VALUES ($1, $2)", [
       d.id,
-      JSON.stringify({ winner: d.peers[winner].id, log: d.log }),
+      JSON.stringify({ winner: d.peers[winner].id, room: d.room, log: d.log }),
     ]);
     for (const [i, p] of d.peers.entries()) {
       p.battle = null;
+      const origin = d.returnTo?.[i];
+      if (origin) {
+        p.zone = origin.zone;
+        p.x = origin.x;
+        p.z = origin.z;
+        p.yaw = origin.yaw;
+      } else {
+        p.zone = p.mode === "pvp" ? 0 : 1;
+      }
+      if (p.zone === 1) send(p, "position", [p.x, p.z]);
       send(
         p,
         "end",
@@ -545,8 +580,9 @@ export async function openWorld(
       if (!h || p.spent.has(data) || Math.hypot(p.x - h[1], p.z - h[2]) > 7)
         return;
       p.studied = false;
-      p.discovery = p.wild[data] ?? beast(h[0]);
-      if (!p.wild[data]) {
+      const existing = p.wild[data] ?? p.respawned?.[data];
+      p.discovery = existing ?? beast(h[0]);
+      if (!existing) {
         p.discovery.variant = Math.floor(sample(data, 0, 31) * 65536);
         const roll = sample(data, 0, 32) * 1000;
         p.discovery.rarity =
@@ -554,6 +590,8 @@ export async function openWorld(
         p.discovery.personality = ["Curious", "Bold", "Patient", "Playful"][
           Math.floor(sample(data, 0, 33) * 4)
         ];
+        p.respawned ??= {};
+        p.respawned[data] = p.discovery;
       }
       p.encounter = data;
       send(p, "encounter", encounterOffer(p, data, a));
@@ -659,17 +697,19 @@ export async function openWorld(
       let damage = 0;
       if (data === "Guard") d.guard[i] = true;
       else {
-        damage =
+        damage = Math.max(
+          1,
           beastStats(b).attack -
-          beastStats(foe).defense +
-          (data === "Pulse"
-            ? strong[elements[b.name]] === elements[foe.name]
-              ? 6
-              : 1
-            : data === "Strike"
-              ? 3
-              : 0);
-        if (d.guard[j]) damage = Math.ceil(damage / 2);
+            beastStats(foe).defense +
+            (data === "Pulse"
+              ? strong[elements[b.name]] === elements[foe.name]
+                ? 6
+                : 1
+              : data === "Strike"
+                ? 3
+                : 0),
+        );
+        if (d.guard[j]) damage = Math.max(1, Math.ceil(damage / 2));
         d.guard[j] = false;
         if (data === "Scorch") d.burn[j] = 2;
       }
@@ -762,13 +802,24 @@ export async function openWorld(
       if (a.charms) a.charms--;
       if (randomInt(100) < (cost === 2 ? odds.focusChance : odds.chance)) {
         const b = p.discovery!;
+        const species = habitatAt(i)![0];
+        const respawn = beast(species);
+        if (i < habitats.length) p.wild[i] = respawn;
+        else {
+          p.respawned ??= {};
+          p.respawned[i] = respawn;
+        }
         if (!guestProfile) {
           a.collection.push(b);
-          p.spent.add(i);
           capture(a);
           a.rangerXp = (a.rangerXp ?? 0) + 10;
         }
-        send(p, "caught", { index: i, beast: b, practice: !!guestProfile });
+        send(p, "caught", {
+          index: i,
+          beast: b,
+          practice: !!guestProfile,
+          respawnVariant: respawn.variant,
+        });
       } else send(p, "escaped", { index: i, cost });
     } else if (type === "claim") {
       if (!claim(a, data)) return;

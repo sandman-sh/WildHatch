@@ -260,14 +260,43 @@
 }
 .beast-card {
   display: grid;
-  justify-items: start;
+  gap: 6px;
   padding: 8px;
-  text-align: left;
   background: #294637;
   border: 1px solid #637d62;
   border-bottom: 3px solid var(--rarity, #97ac8f);
   border-radius: 3px;
   color: #f5edd1;
+}
+.beast-card-open {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+  width: 100%;
+}
+#panel .beast-follow {
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 6px;
+  font: 700 12px "Pixelify Sans", monospace;
+  color: #1f392d;
+  background: #cde4a1;
+  border: 1px solid #ebf7cc;
+  border-radius: 3px;
+}
+#panel .beast-follow.active,
+#panel .beast-follow:disabled {
+  background: #1b3228;
+  color: #a9d9b4;
+  border-color: #5b7e65;
+  opacity: 1;
 }
 .beast-card img {
   height: 64px;

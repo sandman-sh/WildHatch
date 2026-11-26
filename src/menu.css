@@ -608,12 +608,38 @@ dialog {
 @media (pointer: coarse) {
   .location {
     left: max(12px, env(safe-area-inset-left));
-    top: max(12px, env(safe-area-inset-top));
-    max-width: calc(100% - 105px);
+    top: max(10px, env(safe-area-inset-top));
+    max-width: min(50vw, 240px);
+    padding: 6px 10px;
+    background: #142b27eb;
+    border: 1px solid #adbea26b;
+    border-left: 3px solid #d8c89f;
+    border-radius: 9px;
+    text-shadow: none;
+  }
+  .location h1 {
+    font-size: clamp(16px, 2.5vw, 21px);
+    line-height: 1.08;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .guest-mode #field-mode-label {
+    margin-bottom: 2px;
+    font-size: 0.65rem;
+  }
+  .coords {
+    font-size: 11px;
   }
   .mapcard {
     top: max(10px, env(safe-area-inset-top));
     right: max(12px, env(safe-area-inset-right));
+  }
+  .mapcard button {
+    width: 68px;
+    height: 68px;
+    border-width: 3px;
   }
   #touch {
     display: contents;
@@ -665,20 +691,23 @@ dialog {
     display: none;
   }
   .field-tools {
-    left: max(12px, env(safe-area-inset-left));
-    top: max(72px, calc(env(safe-area-inset-top) + 67px));
+    left: auto;
+    right: calc(max(12px, env(safe-area-inset-right)) + 78px);
+    top: max(10px, env(safe-area-inset-top));
     bottom: auto;
-    z-index: 2;
+    z-index: 6;
   }
   .field-tools summary {
-    display: grid;
+    display: flex;
     align-items: center;
   }
   .kit-content {
-    top: 100%;
+    right: 0;
+    left: auto;
+    top: calc(100% + 6px);
     bottom: auto;
     max-height: calc(
-      100dvh - 132px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+      100dvh - 82px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
     );
   }
   select,
