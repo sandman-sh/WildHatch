@@ -88,12 +88,25 @@ async function signer(expected: string) {
 export async function deployed() {
   return Boolean((await base.getAccountInfo(program))?.executable);
 }
-async function previewShopPayment(tx: Transaction) {
+async function previewShopPayment(tx: Transaction, kind?: "buy_wild" | WildItem) {
   const { value } = await base.simulateTransaction(tx);
   if (!value.err) return;
-  if (value.logs?.some((line) => line.includes("InstructionFallbackNotFound")))
+  const logs = value.logs?.join("\n") ?? "";
+  if (logs.includes("InstructionFallbackNotFound"))
     throw Error(
       "This purchase opens after the WildHatch Devnet shop program upgrade.",
+    );
+  if (value.err === "AccountNotFound" || /insufficient lamports/i.test(logs))
+    throw Error(
+      kind === "buy_wild"
+        ? "You need at least 0.105 Devnet SOL (0.1 SOL + fee) to buy 24 WILD."
+        : "Not enough Devnet SOL in your wallet for network fees.",
+    );
+  if (/insufficient funds/i.test(logs))
+    throw Error(
+      kind && kind !== "buy_wild"
+        ? `Not enough Devnet WILD for ${wildItems[kind].name}. Buy 24 WILD above first.`
+        : "Insufficient Devnet token balance for this purchase.",
     );
   throw Error(
     "Devnet could not approve this purchase. Check your WILD and SOL balances for the price and fees.",
@@ -106,7 +119,9 @@ async function transaction(
   accounts: AccountMeta[],
   args: Uint8Array[] = [],
   setup: TransactionInstruction[] = [],
+  onStatus?: (message: string) => void,
 ) {
+  onStatus?.("Preparing transaction…");
   const block = await connection.getLatestBlockhash();
   const tx = new Transaction({ feePayer: user.key, ...block }).add(
     ...setup,
@@ -116,9 +131,12 @@ async function transaction(
       data: Buffer.concat([await tag("global:" + name), ...args]),
     }),
   );
-  if (name === "buy_wild") await previewShopPayment(tx);
+  if (name === "buy_wild") await previewShopPayment(tx, "buy_wild");
+  onStatus?.("Approve transaction in your wallet…");
   const signed = await user.wallet.signTransaction!(tx);
+  onStatus?.("Sending transaction to Devnet…");
   const signature = await connection.sendRawTransaction(signed.serialize());
+  onStatus?.("Confirming on Solana Devnet…");
   const result = await connection.confirmTransaction(
     { signature, ...block },
     "confirmed",
@@ -698,7 +716,11 @@ export async function mintBeast(wallet: string, beast: string) {
   return expected.toBase58();
 }
 const receiptKey = (wallet: string) => "wildhatch.devnet.receipt." + wallet;
-export async function buyWildBundle(wallet: string) {
+export async function buyWildBundle(
+  wallet: string,
+  onStatus?: (message: string) => void,
+) {
+  onStatus?.("Connecting to your wallet…");
   const user = await signer(wallet);
   const destination = ata(wildMint, user.key);
   return transaction(
@@ -715,6 +737,7 @@ export async function buyWildBundle(wallet: string) {
     ],
     [],
     [createAta(user.key, destination, wildMint)],
+    onStatus,
   );
 }
 type Receipt = {
@@ -801,10 +824,13 @@ export async function payWithWild(
   wallet: string,
   item: WildItem,
   onSubmitted: () => void,
+  onStatus?: (message: string) => void,
 ) {
   if (pendingReceipt(wallet))
     throw Error("Redeem the pending receipt before buying again.");
+  onStatus?.("Connecting to your wallet…");
   const user = await signer(wallet);
+  onStatus?.("Preparing purchase…");
   const block = await base.getLatestBlockhash();
   const tx = new Transaction({ feePayer: user.key, ...block });
   let box: string | undefined;
@@ -862,16 +888,21 @@ export async function payWithWild(
         data: Buffer.from("WildHatch:" + item),
       }),
     );
-  await previewShopPayment(tx);
+  await previewShopPayment(tx, item);
+  onStatus?.("Approve purchase in your wallet…");
   const signed = await user.wallet.signTransaction!(tx);
-  const signature = bs58.encode(signed.signature!);
+  const signatureBytes = signed.signature ?? signed.signatures[0]?.signature;
+  if (!signatureBytes) throw Error("Wallet did not return a signature.");
+  const signature = bs58.encode(signatureBytes);
   const receipt = { signature, item, box, expires: block.lastValidBlockHeight };
   localStorage.setItem(
     receiptKey(wallet) + "." + signature,
     JSON.stringify(receipt),
   );
+  onStatus?.("Sending payment to Devnet…");
   await base.sendRawTransaction(signed.serialize());
   onSubmitted();
+  onStatus?.("Payment submitted. Waiting for finality (about 10–15s)…");
   const result = await base.confirmTransaction(
     { signature, ...block },
     "finalized",
@@ -880,5 +911,6 @@ export async function payWithWild(
     clearReceipt(wallet, receipt);
     throw Error("Devnet rejected the WILD payment.");
   }
+  onStatus?.("Finalized! Crediting items to your pack…");
   return redeemReceipt(wallet, receipt);
 }

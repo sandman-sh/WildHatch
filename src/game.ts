@@ -1,3 +1,4 @@
+import { readApiJson } from "./apiJson";
 import { connectWorld } from "./worldConnection";
 import { mountWalletBalances } from "./walletBalances";
 import { battleSound, gameAudio } from "./audio";
@@ -47,7 +48,7 @@ import {
   beastStats,
   inheritedMutation,
 } from "./shared";
-import { fieldRanger, rangerFor } from "./rangers";
+import { fieldRanger, rangerFor, setWalletRoster } from "./rangers";
 import type { Profile, Beast } from "./shared";
 import type { PlayMode, WorldPlayer } from "./playMode";
 const find = <E extends HTMLElement = HTMLElement>(s: string) =>
@@ -877,23 +878,32 @@ function display(key: string, collectibleMint?: string) {
       button("Continue exploring", close);
       return;
     }
-    line("p", (profile.wild ?? 0) + " game WILD available");
+    const gameWild = profile.wild ?? 0;
+    line("p", gameWild + " game WILD available");
     line(
       "p",
-      "Win an arena duel by knockout to earn 12 WILD for the shop and trading post.",
+      "Win an arena duel by knockout to earn 12 Game WILD, or buy supplies with Devnet SOL & WILD.",
     );
+    if (gameWild < wildItems.orbs.cost) {
+      button("Buy WILD & Orbs on Devnet", () => display("devnet-shop"), true);
+    }
     shopGrid(content, (id, card) => {
       const item = wildItems[id];
-      button(
+      const buy = button(
         item.cost + " Game WILD",
-        () => send(id === "orbs" ? "buyOrbs" : "openCache", id),
+        () => {
+          buy.disabled = true;
+          buy.textContent = "Purchasing…";
+          send(id === "orbs" ? "buyOrbs" : "openCache", id);
+        },
         false,
         card,
-      ).disabled =
-        (profile.wild ?? 0) < item.cost ||
+      );
+      buy.disabled =
+        gameWild < item.cost ||
         (id !== "charm" && profile.orbs > 95);
     });
-    button("Devnet WILD shop", () => display("devnet-shop"));
+    button("Devnet WILD shop", () => display("devnet-shop"), gameWild >= wildItems.orbs.cost);
   }
   if (
     key === "ranked" ||
@@ -923,6 +933,21 @@ function display(key: string, collectibleMint?: string) {
               key,
               collectibleMint,
               (mint) => display("escrow", mint),
+              async () => {
+                try {
+                  const res = await fetch("/api/profile");
+                  if (!res.ok) return;
+                  const latest = await readApiJson<Profile>(
+                    res,
+                    "Could not refresh your profile.",
+                  );
+                  profile = latest;
+                  setWalletRoster(profile.wallet ?? null, profile.unlockedRangers);
+                  hud();
+                } catch {
+                  // The next world sync will reconcile profile changes.
+                }
+              },
             );
         })
         .catch(() => notice("Devnet controls could not load."));

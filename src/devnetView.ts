@@ -31,6 +31,7 @@ export function mountDevnetView(
   mode: "ranked" | "escrow" | "devnet-shop" | "owned-collectibles",
   collectibleMint?: string,
   listCollectible?: (mint: string) => void,
+  onProfileUpdate?: () => Promise<void> | void,
 ) {
   let closed = false;
   let busy = false;
@@ -586,7 +587,14 @@ export function mountDevnetView(
     add("p", "24 Devnet WILD for 0.1 Devnet SOL, plus network fees.", bundle);
     button(
       "Buy 24 WILD",
-      async () => reflectTx(await buyWildBundle(wallet)),
+      async () => {
+        const sig = await buyWildBundle(wallet, (msg) => {
+          if (!closed) status.textContent = msg;
+        });
+        gameAudio.play("resource");
+        reflectTx(sig);
+        status.prepend("24 Devnet WILD added to your wallet · ");
+      },
       bundle,
       true,
     );
@@ -609,6 +617,7 @@ export function mountDevnetView(
       );
       revealShopBox(root, purchase.item, purchase.reward);
       gameAudio.play(purchase.reward.aurora ? "rare" : "resource");
+      void onProfileUpdate?.();
     };
     const retry = button("Check pending purchase", async () => {
       try {
@@ -629,13 +638,15 @@ export function mountDevnetView(
         wildItems[id].cost + " Devnet WILD",
         async () => {
           try {
-            status.textContent = "Confirm in your wallet…";
             result(
-              await payWithWild(wallet, id, () => {
-                status.textContent =
-                  "Payment submitted. Waiting for confirmation…";
-                sync();
-              }),
+              await payWithWild(
+                wallet,
+                id,
+                () => sync(),
+                (msg) => {
+                  if (!closed) status.textContent = msg;
+                },
+              ),
             );
           } finally {
             sync();
@@ -663,8 +674,9 @@ export function mountDevnetView(
         .finally(() => {
           busy = false;
           sync();
+          void refreshBalances();
         });
-    }, 6000);
+    }, 3000);
   }
   void start().catch((error) => {
     if (!closed)
