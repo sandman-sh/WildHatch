@@ -1,4 +1,4 @@
-import { fluid, walkable } from "../src/world.ts";
+import { fluid, walkable } from "../src/worldTerrain.ts";
 
 export type SpawnPoint = readonly [number, number];
 const clearance = 3;

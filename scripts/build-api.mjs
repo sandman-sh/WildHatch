@@ -1,11 +1,14 @@
 import { build } from "esbuild";
 
 await build({
-  entryPoints: ["server/handler.ts"],
+  entryPoints: ["server/api.ts"],
   bundle: true,
   platform: "node",
-  target: "node26",
+  target: "node24",
   format: "esm",
-  packages: "external",
-  outfile: "api/handler.js",
+  packages: "bundle",
+  banner: {
+    js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);',
+  },
+  outfile: "api/_api.mjs",
 });

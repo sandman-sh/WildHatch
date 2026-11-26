@@ -1,7 +1,7 @@
 import { guestRanger, ownsRanger, starterRangers } from "../src/rangers.ts";
 import { createRaids } from "./raids.ts";
 import { missions, claim, survey, capture, win } from "./missions.ts";
-import { walkable } from "../src/world.ts";
+import { walkable } from "../src/worldTerrain.ts";
 import { frontierAt, ferryCamp, siteId, sample } from "../src/frontier.ts";
 import { marketplace, MarketError } from "./market.ts";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";

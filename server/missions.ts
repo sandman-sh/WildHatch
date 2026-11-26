@@ -1,4 +1,4 @@
-import { biome } from "../src/world.ts";
+import { biome } from "../src/worldTerrain.ts";
 import type { Profile } from "../src/shared.ts";
 
 export function survey(p: Profile, x: number, z: number) {
