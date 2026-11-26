@@ -16,11 +16,19 @@ Catch and raise voxel beasts across a shared archipelago. Mint eligible catches 
 
 | Mode              | What you can do                                                                                                                                           |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Normal mode**   | Sign in with a Solana wallet, study habitats, and catch beasts. Train, evolve, and hatch companions or bring other rangers to the Green Dragon sanctuary. |
-| **PvP Arena**     | Queue or invite a player for a standard beast duel. Open **Devnet PvP · MagicBlock** for wallet-signed matches and on-chain rewards.                      |
-| **Play as guest** | Explore the shared world with a temporary ranger name and three practice orbs. Practice catches release the beast.                                        |
+| **Normal mode**   | Sign in with a Solana wallet, study habitats, and catch beasts. Habitats continuously respawn with newly rolled rarity and power, and you can swap any caught beast as your **Follow me** companion or bring other rangers to the Green Dragon sanctuary. |
+| **PvP Arena**     | Queue or invite a player for a 1v1 duel inside a dedicated private PvP room with rarity-scaled health and power. Open **Devnet PvP · MagicBlock** for wallet-signed matches and on-chain rewards.                                                       |
+| **Play as guest** | Explore the shared world with a temporary ranger name and three practice orbs. Practice catches release the beast.                                                                                                                                      |
 
-The island atlas tracks habitats and camps as players sail into a procedurally generated frontier. Supabase Realtime carries nearby movement, and the game API validates captures, progression, and Trading Post sales.
+The island atlas and real-time animated **Habitat Radar** track nearby signals with element-coded blips and directional lock-on as players sail into a procedurally generated frontier. Supabase Realtime carries nearby movement, and the game API validates captures, progression, companion swaps, and Trading Post sales.
+
+### Gameplay & Field UI Highlights
+
+- **Real-time Habitat Radar:** Circular sonar scanner with sweeping phosphor beam, element-colored pulse blips, interactive tap-to-lock targeting, and compact signal distance bar (`Scan`).
+- **Continuous Habitat Respawns:** Catching a beast at a habitat immediately spawns another beast of that species with a freshly rolled rarity tier, variant, and power.
+- **One-Click Companion Swap:** Choose **Follow me** directly on any card in your Field Journal (or detail sheet) to swap your live 3D companion following you in the world.
+- **Rarity-Scaled Combat & Private PvP Rooms:** Beast rarity (`Normal` → `Mythic`) scales health, attack, defense, speed, and PvP power, while each PvP match creates its own isolated private arena room.
+- **Clean Mobile & Field Kit HUD:** Non-overlapping coarse/mobile layout keeping location telemetry, Field Kit, minimap, thumbstick, and belt shortcuts unobstructed, with **Main menu** and **Quit game** controls built into Field Kit.
 
 ## Ownership and WILD
 
