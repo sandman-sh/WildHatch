@@ -60,7 +60,7 @@ Players can show a wallet-owned beast as their arena companion. The signed entry
 
 ## Run locally
 
-Use **Node.js 24.x** and npm. Clone WildHatch and install its dependencies.
+Use **Node.js 26.x** and npm. Clone WildHatch and install its dependencies.
 
 ```sh
 git clone https://github.com/sandman-sh/WildHatch.git
@@ -78,7 +78,7 @@ Open the URL printed by Vite. Run `npm test` for gameplay and multiplayer checks
 
 ## Deploy on Vercel
 
-Set the project root to the WildHatch app directory. Choose **Vite** and **Node.js 24.x**, then add the following in **Project Settings → Environment Variables**.
+Set the project root to the WildHatch app directory. Choose **Vite** and **Node.js 26.x**, then add the following in **Project Settings → Environment Variables**.
 
 | Variable                             | Purpose                                                                    |
 | ------------------------------------ | -------------------------------------------------------------------------- |

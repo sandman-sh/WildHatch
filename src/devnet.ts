@@ -1,5 +1,6 @@
 import { Buffer } from "buffer";
 import bs58 from "bs58";
+import { parseJsonBody, readApiJson } from "./apiJson";
 import {
   Connection,
   PublicKey,
@@ -136,8 +137,8 @@ async function rpc(endpoint: string, method: string, params: string[] = []) {
     signal: AbortSignal.timeout(10000),
   });
   if (!response.ok) return undefined;
-  const { result } = await response.json();
-  return result;
+  const parsed = await parseJsonBody(response);
+  return parsed?.result;
 }
 async function rollupFor(key: PublicKey) {
   const result = await rpc(router, "getDelegationStatus", [key.toBase58()]);
@@ -652,9 +653,10 @@ export async function mintBeast(wallet: string, beast: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ beast }),
   });
-  const result = await response.json();
-  if (!response.ok)
-    throw Error(result.error ?? "The collectible issuer is unavailable.");
+  const result = await readApiJson(
+    response,
+    "The collectible issuer is unavailable.",
+  );
   const expected = beastMintAddress(beast);
   if (result.mint !== expected.toBase58())
     throw Error("The collectible mint does not match this beast.");
@@ -783,9 +785,10 @@ export async function redeemReceipt(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(receipt),
   });
-  const reward = await response.json();
-  if (!response.ok)
-    throw Error(reward.error ?? "Could not redeem the receipt.");
+  const reward = await readApiJson(
+    response,
+    "Could not redeem the receipt.",
+  );
   clearReceipt(wallet, receipt);
   return {
     reward: reward as WildReward,

@@ -1,3 +1,4 @@
+import { readApiJson } from "./apiJson";
 import { usernameHint, usernameMaxLength, validateUsername } from "./username";
 
 export function mountUsernameEditor(
@@ -47,9 +48,10 @@ export function mountUsernameEditor(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: result.name }),
       });
-      const saved = await response.json();
-      if (!response.ok)
-        throw Error(saved.error || "Could not save your username.");
+      const saved = await readApiJson<{ name: string }>(
+        response,
+        "Could not save your username.",
+      );
       input.value = saved.name;
       status.textContent = "Username saved.";
       if (form.isConnected) onSaved?.(saved.name);

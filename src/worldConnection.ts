@@ -1,3 +1,4 @@
+import { parseJsonBody } from "./apiJson";
 import { fieldRanger } from "./rangers";
 import type { PlayMode } from "./playMode";
 
@@ -84,9 +85,11 @@ export function connectWorld(
       }),
       signal: AbortSignal.timeout(9000),
     });
-    const result = await response.json();
-    if (!response.ok) {
-      const message = result.error || "The game server is unavailable.";
+    const result = await parseJsonBody(response);
+    if (!response.ok || !result || typeof result !== "object") {
+      const message =
+        (typeof result?.error === "string" && result.error) ||
+        "The game server is unavailable.";
       if (op !== "join" && [401, 409, 410].includes(response.status)) {
         close();
         disconnected(message, response.status === 410);

@@ -1,3 +1,5 @@
+import { readApiJson } from "./apiJson";
+
 export type BrowserWallet = {
   connect(): Promise<{ publicKey: { toString(): string } }>;
   signMessage(
@@ -36,9 +38,7 @@ export async function signInWithWallet() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const result = await response.json();
-    if (!response.ok) throw Error(result.error || "Wallet sign-in failed.");
-    return result;
+    return readApiJson(response, "Wallet sign-in failed.");
   }
   const { id, message } = await post("challenge", {
     address: publicKey.toString(),

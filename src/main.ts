@@ -1,6 +1,7 @@
 import "./style.css";
 import "./menu.css";
 import "./desktopMenu.css";
+import { parseJsonBody, readApiJson } from "./apiJson";
 import { guestSessionId } from "./worldConnection";
 import {
   chooseFieldRanger,
@@ -73,8 +74,7 @@ async function fetchProfile() {
     throw Error(
       "Connect your wallet in Normal mode or PvP Arena to view your ranger profile.",
     );
-  if (!response.ok) throw Error("The game server is unavailable.");
-  return response.json() as Promise<Profile>;
+  return readApiJson<Profile>(response, "The game server is unavailable.");
 }
 async function restoreSession() {
   const previousWallet = signedInWallet;
@@ -83,7 +83,9 @@ async function restoreSession() {
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return;
-    const { wallet: address, unlockedRangers } = await response.json();
+    const session = await parseJsonBody(response);
+    if (!session || typeof session !== "object") return;
+    const { wallet: address, unlockedRangers } = session;
     if (!signingIn && signedInWallet === previousWallet) {
       signedInWallet = address;
       setWalletRoster(address, unlockedRangers);
