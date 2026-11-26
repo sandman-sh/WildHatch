@@ -1,7 +1,13 @@
 import "./style.css";
 import "./menu.css";
 import "./desktopMenu.css";
-import { rangerFor, selectedRanger } from "./rangers";
+import { guestSessionId } from "./worldConnection";
+import {
+  chooseFieldRanger,
+  rangerFor,
+  selectedRanger,
+  setWalletRoster,
+} from "./rangers";
 import { gameAudio } from "./audio";
 import { enterGameDisplay, setExpeditionDisplay } from "./displayMode";
 import { signInWithWallet } from "./browserWallet";
@@ -71,21 +77,24 @@ async function fetchProfile() {
   return response.json() as Promise<Profile>;
 }
 async function restoreSession() {
+  const previousWallet = signedInWallet;
   try {
     const response = await fetch("/api/session", {
       signal: AbortSignal.timeout(5000),
     });
     if (!response.ok) return;
-    const { wallet: address } = await response.json();
-    if (!signingIn && !signedInWallet) {
+    const { wallet: address, unlockedRangers } = await response.json();
+    if (!signingIn && signedInWallet === previousWallet) {
       signedInWallet = address;
+      setWalletRoster(address, unlockedRangers);
+      menuExplorer();
       updateTitle();
     }
   } catch {
     // Mode entry remains available after a network interruption.
   }
 }
-void restoreSession();
+const sessionReady = restoreSession();
 function openMode(playMode: WalletMode) {
   if (signedInWallet) {
     mode = playMode;
@@ -114,6 +123,8 @@ modeAction.onclick = async () => {
   try {
     const account = await signInWithWallet();
     signedInWallet = account.wallet;
+    setWalletRoster(account.wallet, account.unlockedRangers);
+    menuExplorer();
   } catch (error) {
     walletError =
       error instanceof Error ? error.message : "Wallet connection failed.";
@@ -262,7 +273,15 @@ async function launch() {
         import("./voxelExplorer"),
         import("./scenery"),
       ]);
-    await loadExplorer(selectedRanger());
+    if (mode !== "guest") {
+      const current = await fetchProfile();
+      signedInWallet = current.wallet ?? null;
+      setWalletRoster(signedInWallet, current.unlockedRangers);
+      menuExplorer();
+    }
+    await loadExplorer(
+      chooseFieldRanger(mode === "guest" ? guestSessionId() : undefined),
+    );
     report("Gathering wildlife…", 8);
     await loadWildlife((done, total) =>
       report("Gathering wildlife…", 8 + (30 * done) / total),
@@ -324,6 +343,8 @@ import "@fontsource/pixelify-sans/latin-400.css";
 import "@fontsource/pixelify-sans/latin-700.css";
 document.querySelector<HTMLButtonElement>("#choose-ranger")!.onclick =
   async () => {
+    await sessionReady;
+    await restoreSession();
     const { pickExplorer } = await import("./picker");
     pickExplorer();
   };

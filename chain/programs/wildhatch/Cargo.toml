@@ -15,10 +15,12 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 anchor-debug = []
 local-rollup = []
+local-vrf = []
 custom-heap = []
 custom-panic = []
 
 [dependencies]
+ephemeral-vrf-sdk = { version = "=0.4.1", features = ["anchor"] }
 anchor-lang = "=1.2.2"
 anchor-spl = "=1.2.2"
 ephemeral-rollups-sdk = { version = "=0.16.2", features = ["anchor"] }

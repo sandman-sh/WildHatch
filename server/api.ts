@@ -1,13 +1,18 @@
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PlayMode } from "../src/playMode.ts";
 import { validateUsername } from "../src/username.ts";
-import { isWildItem, wildReward } from "../src/wildStore.ts";
+import {
+  grantWildReward,
+  isWildItem,
+  mysteryBox,
+  wildReward,
+} from "../src/wildStore.ts";
 import { prepareCollectible } from "./collectibles.ts";
 import { database, type Database, type Query } from "./database.ts";
 import { profiles } from "./profiles.ts";
 import { challenge, check } from "./wallet.ts";
-import { verifyWildBurn } from "./wildBurn.ts";
+import { verifiedBoxRoll, verifyWildBurn } from "./wildBurn.ts";
 import { beast, openWorld, WorldError } from "./world.ts";
 
 const posts = new Set([
@@ -75,7 +80,7 @@ async function postBody(req: IncomingMessage & { body?: unknown }) {
   }
 }
 
-export function createApi(transact: Database) {
+export function createApi(transact: Database, readBoxRoll = verifiedBoxRoll) {
   return async function api(
     req: IncomingMessage,
     res: ServerResponse,
@@ -93,7 +98,15 @@ export function createApi(transact: Database) {
           profiles(query).signedIn(token),
         );
         if (path === "/api/session")
-          return sendJson(res, { wallet: profile?.wallet ?? null });
+          return sendJson(
+            res,
+            profile
+              ? {
+                  wallet: profile.wallet,
+                  unlockedRangers: profile.unlockedRangers ?? [],
+                }
+              : { wallet: null },
+          );
         if (!profile)
           throw new WorldError("Sign in with your Solana wallet.", 401);
         return sendJson(res, profile);
@@ -137,6 +150,20 @@ export function createApi(transact: Database) {
           ![data.data?.x, data.data?.z, data.data?.yaw].every(Number.isFinite)
         )
           throw new WorldError("Invalid movement coordinates.", 400);
+        if (moving && data.data.path !== undefined) {
+          const path = data.data.path;
+          if (
+            !Array.isArray(path) ||
+            path.length > 48 ||
+            !path.every(
+              (point) =>
+                Array.isArray(point) &&
+                point.length === 2 &&
+                point.every(Number.isFinite),
+            )
+          )
+            throw new WorldError("Invalid movement path.", 400);
+        }
         const scoped = moving || op === "poll";
         const result = await transact(op !== "poll", async (query) => {
           const world = await openWorld(
@@ -152,7 +179,7 @@ export function createApi(transact: Database) {
           if (!scoped) await world.tick();
           const session =
             op === "join"
-              ? await world.join(key, mode as PlayMode, client)
+              ? await world.join(key, mode as PlayMode, client, data.ranger)
               : { peer: world.peer(key, client), after };
           const { peer } = session;
           if (peer.mode !== mode)
@@ -163,7 +190,7 @@ export function createApi(transact: Database) {
             return {};
           }
           if (op === "heartbeat") world.heartbeat(peer, after);
-          if (op === "action") await world.action(peer, type, data.data);
+          if (op === "action") await world.action(peer, type, data.data, after);
           if (op !== "poll") await world.commit(op !== "heartbeat");
           const state = await world.view(peer, session.after, !moving);
           if (op !== "join") return state;
@@ -217,11 +244,16 @@ export function createApi(transact: Database) {
       }
 
       if (path === "/api/wild-receipt") {
-        const { item, signature } = data;
+        const { item, box } = data;
+        const signature = box === undefined ? data.signature : box;
+        const receiptPattern =
+          box === undefined
+            ? /^[1-9A-HJ-NP-Za-km-z]{64,88}$/
+            : /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
         if (
           !isWildItem(item) ||
           typeof signature !== "string" ||
-          !/^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(signature)
+          !receiptPattern.test(signature)
         )
           throw new WorldError(
             "A signed-in wallet and a valid Devnet payment receipt are required.",
@@ -241,9 +273,11 @@ export function createApi(transact: Database) {
         if (!profile?.wallet)
           throw new WorldError("A signed-in wallet is required.", 400);
         const wallet = profile.wallet;
+        let roll = 0;
         if (!prior) {
           try {
-            await verifyWildBurn(signature, wallet, item);
+            if (box !== undefined) roll = await readBoxRoll(box, wallet, item);
+            else await verifyWildBurn(signature, wallet, item);
           } catch (error) {
             throw new WorldError(
               error instanceof Error
@@ -266,9 +300,25 @@ export function createApi(transact: Database) {
               400,
             );
           if (used) return used.reward;
-          const reward = wildReward(item, randomInt(100));
-          current.orbs += reward.orbs;
-          current.shards += reward.shards;
+          const reward = wildReward(item, roll);
+          // Older clients burned SPL tokens directly. Honor those receipts with their original loot table.
+          if (box === undefined && mysteryBox(item)) {
+            const legacy = randomInt(100);
+            const bonus = legacy < (item === "trail" ? 30 : 25);
+            reward.orbs = bonus ? 0 : item === "trail" ? 3 : 4;
+            reward.shards = item === "trail" ? (bonus ? 4 : 1) : bonus ? 8 : 3;
+            reward.aurora = false;
+            reward.charms = 0;
+          }
+          // Bind character selection to this verified opening and its VRF result.
+          const explorerSeed =
+            box === undefined
+              ? undefined
+              : createHash("sha256")
+                  .update("wildhatch/explorer/v1/" + box + "/" + roll)
+                  .digest()
+                  .readUInt32LE(0);
+          grantWildReward(current, reward, explorerSeed);
           await save(token, current);
           await query("INSERT INTO wild_receipts VALUES ($1, $2, $3, $4)", [
             signature,
@@ -335,7 +385,14 @@ export function createApi(transact: Database) {
           pending.address,
         ]);
         const account = profiles(query);
-        if (linked) return { token: linked.token, address: pending.address };
+        if (linked) {
+          const profile = await account.read(linked.token);
+          return {
+            token: linked.token,
+            address: pending.address,
+            unlockedRangers: profile.unlockedRangers ?? [],
+          };
+        }
         const { token: created, profile } = await account.create(
           beast("Mosskin"),
         );
@@ -345,7 +402,11 @@ export function createApi(transact: Database) {
           pending.address,
           created,
         ]);
-        return { token: created, address: pending.address };
+        return {
+          token: created,
+          address: pending.address,
+          unlockedRangers: [],
+        };
       });
       res.setHeader(
         "Set-Cookie",
@@ -354,7 +415,10 @@ export function createApi(transact: Database) {
           "; HttpOnly; SameSite=Strict; Max-Age=31536000; Path=/" +
           (origin.protocol === "https:" ? "; Secure" : ""),
       );
-      return sendJson(res, { wallet: session.address });
+      return sendJson(res, {
+        wallet: session.address,
+        unlockedRangers: session.unlockedRangers,
+      });
     } catch (error) {
       if (error instanceof WorldError)
         return sendJson(res, { error: error.message }, error.status);

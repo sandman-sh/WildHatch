@@ -17,6 +17,7 @@ import {
   arenaCompanionPrefix,
   verifyArenaCompanionEntry,
 } from "../src/arenaCompanion.ts";
+import { verifiedBoxRoll } from "../server/wildBurn.ts";
 import { beastMemo, beastMemoProgram } from "../src/collectibleTraits.ts";
 
 const endpoint = new URL(
@@ -221,6 +222,130 @@ if (rollup) {
   console.log(
     "PASS: MagicBlock delegation, play, settlement, and single-claim reward",
   );
+}
+const supplyAccount = ata(wild, rival.publicKey);
+const setupSupply = new TransactionInstruction({
+  programId: associated,
+  data: Buffer.from([1]),
+  keys: [
+    rivalKey,
+    meta(supplyAccount, true),
+    meta(rival.publicKey),
+    meta(wild),
+    meta(system),
+    meta(token),
+  ],
+});
+const treasuryBefore = await rpc.getBalance(issuer.publicKey);
+await send(
+  [rival],
+  setupSupply,
+  instruction("buy_wild", [
+    rivalKey,
+    meta(issuer.publicKey, true),
+    meta(wild, true),
+    meta(supplyAccount, true),
+    meta(token),
+    meta(system),
+  ]),
+);
+assert.equal(
+  (await rpc.getBalance(issuer.publicKey)) - treasuryBefore,
+  100_000_000,
+);
+assert.equal(
+  (await rpc.getTokenAccountBalance(supplyAccount)).value.amount,
+  "24000000",
+);
+console.log(
+  "PASS: fixed-price WILD bundle transfers SOL and delivers 24 wallet tokens",
+);
+if (process.env.WILDHATCH_TEST_VRF === "1") {
+  const seed = randomBytes(8);
+  const opening = pda("box", rival.publicKey.toBuffer(), seed);
+  await send(
+    [rival],
+    instruction(
+      "open_box",
+      [
+        rivalKey,
+        meta(opening, true),
+        meta(wild, true),
+        meta(supplyAccount, true),
+        meta(
+          new PublicKey(
+            process.env.WILDHATCH_TEST_QUEUE ??
+              "Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh",
+          ),
+          true,
+        ),
+        meta(token),
+        meta(pda("identity")),
+        meta(new PublicKey("Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz")),
+        meta(new PublicKey("SysvarS1otHashes111111111111111111111111111")),
+        meta(system),
+      ],
+      seed,
+      Buffer.from([1]),
+    ),
+  );
+  if (!process.env.WILDHATCH_TEST_QUEUE)
+    assert.equal((await rpc.getAccountInfo(opening)).data[49], 255);
+  assert.equal(
+    (await rpc.getTokenAccountBalance(supplyAccount)).value.amount,
+    "12000000",
+  );
+  await assert.rejects(
+    send(
+      [rival],
+      instruction(
+        "reveal_box",
+        [rivalKey, meta(opening, true)],
+        Buffer.alloc(32),
+      ),
+    ),
+  );
+  if (process.env.WILDHATCH_TEST_QUEUE) {
+    await waitUntil(
+      async () => (await rpc.getAccountInfo(opening)).data[49] < 100,
+    );
+    const account = await rpc.getAccountInfoAndContext(opening, "confirmed");
+    for (
+      let i = 0;
+      i < 70 && (await rpc.getSlot("finalized")) < account.context.slot;
+      i++
+    )
+      await delay(500);
+    assert.equal(
+      await verifiedBoxRoll(
+        opening.toBase58(),
+        rival.publicKey.toBase58(),
+        "prism",
+        rpc,
+      ),
+      account.value.data[49],
+    );
+    await assert.rejects(
+      verifiedBoxRoll(
+        opening.toBase58(),
+        host.publicKey.toBase58(),
+        "prism",
+        rpc,
+      ),
+    );
+    await assert.rejects(
+      verifiedBoxRoll(
+        opening.toBase58(),
+        rival.publicKey.toBase58(),
+        "trail",
+        rpc,
+      ),
+    );
+    console.log(
+      "PASS: scoped MagicBlock oracle fulfillment stores the verified box roll",
+    );
+  }
+  console.log("PASS: Prism burn and MagicBlock VRF request commit together");
 }
 const id = randomBytes(16),
   collectible = pda("beast", id);

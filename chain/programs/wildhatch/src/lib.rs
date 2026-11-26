@@ -7,6 +7,17 @@ use anchor_spl::token::{
 use ephemeral_rollups_sdk::anchor::{commit, delegate, ephemeral};
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 use ephemeral_rollups_sdk::ephem::MagicIntentBundleBuilder;
+use ephemeral_vrf_sdk::{
+    anchor::{vrf, vrf_callback},
+    instructions::{create_request_scoped_randomness_ix, RequestRandomnessParams},
+    rnd::random_u8_with_range,
+    types::SerializableAccountMeta,
+};
+
+#[cfg(not(feature = "local-vrf"))]
+use ephemeral_vrf_sdk::consts::DEFAULT_QUEUE as BOX_QUEUE;
+#[cfg(feature = "local-vrf")]
+use ephemeral_vrf_sdk::consts::DEFAULT_TEST_QUEUE as BOX_QUEUE;
 
 declare_id!("BUfh4GsJjyH52oLkgyG3U2UT7qJwo6opLDmEUW4w7PpJ");
 
@@ -158,6 +169,79 @@ pub mod wildhatch {
             12_000_000,
         )?;
         duel.rewarded = true;
+        Ok(())
+    }
+
+    pub fn buy_wild(ctx: Context<BuyWild>) -> Result<()> {
+        system_program::transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                system_program::Transfer {
+                    from: ctx.accounts.buyer.to_account_info(),
+                    to: ctx.accounts.treasury.to_account_info(),
+                },
+            ),
+            100_000_000,
+        )?;
+        token::mint_to(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.key(),
+                MintTo {
+                    mint: ctx.accounts.mint.to_account_info(),
+                    to: ctx.accounts.destination.to_account_info(),
+                    authority: ctx.accounts.mint.to_account_info(),
+                },
+                &[&[CURRENCY, &[ctx.bumps.mint]]],
+            ),
+            24_000_000,
+        )
+    }
+
+    pub fn open_box(ctx: Context<OpenBox>, nonce: u64, kind: u8) -> Result<()> {
+        let cost = match kind {
+            0 => 6_000_000,
+            1 => 12_000_000,
+            _ => return err!(WildError::InvalidBox),
+        };
+        token::burn(
+            CpiContext::new(
+                ctx.accounts.token_program.key(),
+                token::Burn {
+                    mint: ctx.accounts.mint.to_account_info(),
+                    from: ctx.accounts.source.to_account_info(),
+                    authority: ctx.accounts.buyer.to_account_info(),
+                },
+            ),
+            cost,
+        )?;
+        let receipt = &mut ctx.accounts.receipt;
+        receipt.set_inner(BoxOpening {
+            buyer: ctx.accounts.buyer.key(),
+            nonce,
+            kind,
+            roll: 255,
+        });
+        let ix = create_request_scoped_randomness_ix(RequestRandomnessParams {
+            payer: ctx.accounts.buyer.key(),
+            oracle_queue: ctx.accounts.oracle_queue.key(),
+            callback_program_id: crate::ID,
+            callback_discriminator: crate::instruction::RevealBox::DISCRIMINATOR.to_vec(),
+            caller_seed: receipt.key().to_bytes(),
+            accounts_metas: Some(vec![SerializableAccountMeta {
+                pubkey: receipt.key(),
+                is_signer: false,
+                is_writable: true,
+            }]),
+            ..Default::default()
+        });
+        ctx.accounts
+            .invoke_signed_vrf(&ctx.accounts.buyer.to_account_info(), &ix)?;
+        Ok(())
+    }
+
+    pub fn reveal_box(ctx: Context<RevealBox>, randomness: [u8; 32]) -> Result<()> {
+        require!(ctx.accounts.receipt.roll == 255, WildError::InvalidBox);
+        ctx.accounts.receipt.roll = random_u8_with_range(&randomness, 0, 99);
         Ok(())
     }
 
@@ -399,6 +483,53 @@ pub struct InitializeCurrency<'info> {
 }
 
 #[derive(Accounts)]
+pub struct BuyWild<'info> {
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    #[account(mut, address = DEPLOYER)]
+    pub treasury: SystemAccount<'info>,
+    #[account(mut, seeds = [CURRENCY], bump)]
+    pub mint: Account<'info, Mint>,
+    #[account(mut, token::mint = mint, token::authority = buyer)]
+    pub destination: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[account]
+pub struct BoxOpening {
+    pub buyer: Pubkey,
+    pub nonce: u64,
+    pub kind: u8,
+    pub roll: u8,
+}
+
+#[vrf]
+#[derive(Accounts)]
+#[instruction(nonce: u64)]
+pub struct OpenBox<'info> {
+    #[account(mut)]
+    pub buyer: Signer<'info>,
+    #[account(init, payer = buyer, space = 50, seeds = [b"box", buyer.key().as_ref(), &nonce.to_le_bytes()], bump)]
+    pub receipt: Account<'info, BoxOpening>,
+    #[account(mut, seeds = [CURRENCY], bump)]
+    pub mint: Account<'info, Mint>,
+    #[account(mut, token::mint = mint, token::authority = buyer)]
+    pub source: Account<'info, TokenAccount>,
+    /// CHECK: Fixed MagicBlock Solana VRF queue.
+    #[account(mut, address = BOX_QUEUE)]
+    pub oracle_queue: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[vrf_callback]
+#[derive(Accounts)]
+pub struct RevealBox<'info> {
+    #[account(mut)]
+    pub receipt: Account<'info, BoxOpening>,
+}
+
+#[derive(Accounts)]
 pub struct ClaimWild<'info> {
     pub winner: Signer<'info>,
     #[account(mut)]
@@ -549,4 +680,6 @@ pub enum WildError {
     InvalidOffer,
     #[msg("Escrow requires a mint without a freeze authority.")]
     FrozenMint,
+    #[msg("Invalid or completed box opening.")]
+    InvalidBox,
 }

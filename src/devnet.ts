@@ -4,13 +4,20 @@ import {
   Connection,
   PublicKey,
   SystemProgram,
+  SYSVAR_SLOT_HASHES_PUBKEY,
   Transaction,
   TransactionInstruction,
   type AccountMeta,
 } from "@solana/web3.js";
 import { browserWallet, type BrowserWallet } from "./browserWallet";
 import { wildhatchIssuer, wildhatchProgram } from "./wildhatchProgram";
-import { isWildItem, wildItems, type WildItem } from "./wildStore";
+import {
+  isWildItem,
+  mysteryBox,
+  wildItems,
+  type WildReward,
+  type WildItem,
+} from "./wildStore";
 import {
   beastMemoPrefix,
   beastMemoProgram,
@@ -80,6 +87,17 @@ async function signer(expected: string) {
 export async function deployed() {
   return Boolean((await base.getAccountInfo(program))?.executable);
 }
+async function previewShopPayment(tx: Transaction) {
+  const { value } = await base.simulateTransaction(tx);
+  if (!value.err) return;
+  if (value.logs?.some((line) => line.includes("InstructionFallbackNotFound")))
+    throw Error(
+      "This purchase opens after the WildHatch Devnet shop program upgrade.",
+    );
+  throw Error(
+    "Devnet could not approve this purchase. Check your WILD and SOL balances for the price and fees.",
+  );
+}
 async function transaction(
   user: Awaited<ReturnType<typeof signer>>,
   connection: Connection,
@@ -97,6 +115,7 @@ async function transaction(
       data: Buffer.concat([await tag("global:" + name), ...args]),
     }),
   );
+  if (name === "buy_wild") await previewShopPayment(tx);
   const signed = await user.wallet.signTransaction!(tx);
   const signature = await connection.sendRawTransaction(signed.serialize());
   const result = await connection.confirmTransaction(
@@ -677,26 +696,88 @@ export async function mintBeast(wallet: string, beast: string) {
   return expected.toBase58();
 }
 const receiptKey = (wallet: string) => "wildhatch.devnet.receipt." + wallet;
-type Receipt = { signature: string; item: WildItem };
+export async function buyWildBundle(wallet: string) {
+  const user = await signer(wallet);
+  const destination = ata(wildMint, user.key);
+  return transaction(
+    user,
+    base,
+    "buy_wild",
+    [
+      account(user.key, true, true),
+      account(new PublicKey(wildhatchIssuer), true),
+      account(wildMint, true),
+      account(destination, true),
+      account(token),
+      account(system),
+    ],
+    [],
+    [createAta(user.key, destination, wildMint)],
+  );
+}
+type Receipt = {
+  signature: string;
+  item: WildItem;
+  box?: string;
+  expires?: number;
+};
 export function pendingReceipt(wallet: string): Receipt | null {
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(receiptKey(wallet)) ?? "null",
+    const prefix = receiptKey(wallet);
+    const keys = Object.keys(localStorage).filter(
+      (key) => key === prefix || key.startsWith(prefix + "."),
     );
-    if (
-      isWildItem(saved?.item) &&
-      typeof saved.signature === "string" &&
-      /^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(saved.signature)
-    )
-      return { signature: saved.signature, item: saved.item };
+    for (const key of keys) {
+      let saved;
+      try {
+        saved = JSON.parse(localStorage.getItem(key) ?? "null");
+      } catch {
+        continue;
+      }
+      if (
+        isWildItem(saved?.item) &&
+        typeof saved.signature === "string" &&
+        /^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(saved.signature)
+      )
+        return saved as Receipt;
+    }
   } catch {
     // A damaged receipt or unavailable storage should leave the shop usable.
   }
   return null;
 }
-export async function redeemReceipt(wallet: string) {
-  const receipt = pendingReceipt(wallet);
+function clearReceipt(wallet: string, receipt: Receipt) {
+  const prefix = receiptKey(wallet);
+  localStorage.removeItem(prefix + "." + receipt.signature);
+  const legacy = localStorage.getItem(prefix);
+  if (legacy) {
+    try {
+      if (JSON.parse(legacy)?.signature === receipt.signature)
+        localStorage.removeItem(prefix);
+    } catch {
+      localStorage.removeItem(prefix);
+    }
+  }
+}
+export async function redeemReceipt(
+  wallet: string,
+  receipt = pendingReceipt(wallet),
+) {
   if (!receipt) throw Error("There is no pending receipt.");
+  if (receipt.expires) {
+    const signature = (
+      await base.getSignatureStatuses([receipt.signature], {
+        searchTransactionHistory: true,
+      })
+    ).value[0];
+    if (
+      signature?.err ||
+      (!signature && (await base.getBlockHeight("finalized")) > receipt.expires)
+    ) {
+      clearReceipt(wallet, receipt);
+      throw Error("Payment failed or expired. You can try again.");
+    }
+  }
   const response = await fetch("/api/wild-receipt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -705,45 +786,96 @@ export async function redeemReceipt(wallet: string) {
   const reward = await response.json();
   if (!response.ok)
     throw Error(reward.error ?? "Could not redeem the receipt.");
-  localStorage.removeItem(receiptKey(wallet));
-  return reward as { orbs: number; shards: number };
+  clearReceipt(wallet, receipt);
+  return {
+    reward: reward as WildReward,
+    signature: receipt.signature,
+    item: receipt.item,
+    box: receipt.box,
+  };
 }
-export async function payWithWild(wallet: string, item: WildItem) {
+export async function payWithWild(
+  wallet: string,
+  item: WildItem,
+  onSubmitted: () => void,
+) {
   if (pendingReceipt(wallet))
     throw Error("Redeem the pending receipt before buying again.");
   const user = await signer(wallet);
   const block = await base.getLatestBlockhash();
   const tx = new Transaction({ feePayer: user.key, ...block });
-  tx.add(
-    new TransactionInstruction({
-      programId: token,
-      keys: [
-        account(ata(wildMint, user.key), true),
-        account(wildMint, true),
-        account(user.key, false, true),
-      ],
-      data: Buffer.concat([
-        Uint8Array.of(15),
-        u64(BigInt(wildItems[item].cost) * 1_000_000n),
-        Uint8Array.of(6),
-      ]),
-    }),
-    new TransactionInstruction({
-      programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
-      keys: [account(user.key, false, true)],
-      data: Buffer.from("WildHatch:" + item),
-    }),
-  );
+  let box: string | undefined;
+  if (mysteryBox(item)) {
+    const seed = nonce();
+    const opening = pda("box", user.key, program, [seed]);
+    box = opening.toBase58();
+    const [identity] = PublicKey.findProgramAddressSync(
+      [Buffer.from("identity")],
+      program,
+    );
+    tx.add(
+      new TransactionInstruction({
+        programId: program,
+        keys: [
+          account(user.key, true, true),
+          account(opening, true),
+          account(wildMint, true),
+          account(ata(wildMint, user.key), true),
+          account(
+            new PublicKey("Cuj97ggrhhidhbu39TijNVqE74xvKJ69gDervRUXAxGh"),
+            true,
+          ),
+          account(token),
+          account(identity),
+          account(new PublicKey("Vrf1RNUjXmQGjmQrQLvJHs9SNkvDJEsRVFPkfSQUwGz")),
+          account(SYSVAR_SLOT_HASHES_PUBKEY),
+          account(system),
+        ],
+        data: Buffer.concat([
+          await tag("global:open_box"),
+          seed,
+          Uint8Array.of(item === "trail" ? 0 : 1),
+        ]),
+      }),
+    );
+  } else
+    tx.add(
+      new TransactionInstruction({
+        programId: token,
+        keys: [
+          account(ata(wildMint, user.key), true),
+          account(wildMint, true),
+          account(user.key, false, true),
+        ],
+        data: Buffer.concat([
+          Uint8Array.of(15),
+          u64(BigInt(wildItems[item].cost) * 1_000_000n),
+          Uint8Array.of(6),
+        ]),
+      }),
+      new TransactionInstruction({
+        programId: new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"),
+        keys: [account(user.key, false, true)],
+        data: Buffer.from("WildHatch:" + item),
+      }),
+    );
+  await previewShopPayment(tx);
   const signed = await user.wallet.signTransaction!(tx);
-  const signature = await base.sendRawTransaction(signed.serialize());
-  localStorage.setItem(receiptKey(wallet), JSON.stringify({ signature, item }));
+  const signature = bs58.encode(signed.signature!);
+  const receipt = { signature, item, box, expires: block.lastValidBlockHeight };
+  localStorage.setItem(
+    receiptKey(wallet) + "." + signature,
+    JSON.stringify(receipt),
+  );
+  await base.sendRawTransaction(signed.serialize());
+  onSubmitted();
   const result = await base.confirmTransaction(
     { signature, ...block },
     "finalized",
   );
   if (result.value.err) {
-    localStorage.removeItem(receiptKey(wallet));
+    clearReceipt(wallet, receipt);
     throw Error("Devnet rejected the WILD payment.");
   }
-  return redeemReceipt(wallet);
+  return redeemReceipt(wallet, receipt);
 }

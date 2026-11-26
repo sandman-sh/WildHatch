@@ -46,5 +46,5 @@ export async function signInWithWallet() {
   return post("login", {
     id,
     signature: await walletSignature(wallet, message),
-  }) as Promise<{ wallet: string }>;
+  }) as Promise<{ wallet: string; unlockedRangers: number[] }>;
 }

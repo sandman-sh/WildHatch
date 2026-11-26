@@ -4,7 +4,9 @@
 
 Normal mode, guest exploration, and ordinary PvP share a world backed by Supabase Postgres. Supabase Realtime signals when clients should refresh nearby players and game events. The game API validates actions, and Postgres transactions settle the Game WILD shop and beast listings.
 
-Devnet PvP uses an independent match account. The host invites a Solana wallet, the challenger accepts, and the host delegates the account to MagicBlock. Players sign each move. The winner of a settled knockout can claim 12 Devnet SPL WILD once. The Devnet shop burns SPL WILD and validates the finalized receipt before granting supplies. Mystery-box contents for both shops are drawn by the game server with the odds shown in the UI.
+Devnet PvP uses an independent match account. The host invites a Solana wallet, the challenger accepts, and the host delegates the account to MagicBlock. Players sign each move. The winner of a settled knockout can claim 12 Devnet SPL WILD once. The Devnet shop burns SPL WILD and validates the finalized receipt before granting supplies. The updated shop program sells 24 Devnet WILD for 0.1 Devnet SOL and burns WILD in the same transaction that requests a MagicBlock VRF roll for a Trail or Prism box. The API reads the finalized box account and credits its owner once. Game WILD boxes use server randomness. The updated instructions require a program upgrade before use on Devnet. Trail Boxes include three orbs and either a shard or a single-use Focus Charm. Prism Boxes include four orbs and three shards, with a 10% chance to unlock the Aurora orb finish. A Focus Charm adds ten percentage points to the next wild capture attempt, capped at 90%.
+
+Signed-in players start with the first six explorers. Each current Trail or Prism Box also unlocks one randomly selected unowned explorer until the roster is complete. The wallet-linked game profile stores these unlocks. Guest appearances use the full roster.
 
 The game issues one supply-capped Devnet SPL collectible per eligible beast ID. The issuer signs a memo in the mint transaction that records the species, element, genetic variant, rarity, personality, stage, level, crest, and mutation at mint time. WildHatch verifies that record by mint address and displays it when a buyer inspects an escrow listing. The journal can prefill a fixed-price listing for the collectible in Devnet SOL. Playable beast entries trade through the game’s Trading Post.
 
@@ -12,7 +14,7 @@ The game issues one supply-capped Devnet SPL collectible per eligible beast ID. 
 
 The program address is `BUfh4GsJjyH52oLkgyG3U2UT7qJwo6opLDmEUW4w7PpJ`. The deployment and collectible issuer are currently configured for the same Devnet test signer. Keep keypair files outside the repository.
 
-The Devnet deployment was finalized at slot 525798176. Its deployed bytecode matches the build. The six-decimal WILD mint is `BV54wR24axhu8gw8R7WVriCufYjCLYAwXJsUat94mswj`. [Deployment transaction](https://explorer.solana.com/tx/4MquswfYZVnogPjPr4Ea6V4WWLvzxJCaz7a15H2pmACwNvmzwmuHVgPhUofzxPkGqkRHQ1h2767xCaX11nY1J1yQ?cluster=devnet) · [WILD mint](https://explorer.solana.com/address/BV54wR24axhu8gw8R7WVriCufYjCLYAwXJsUat94mswj?cluster=devnet)
+The Devnet deployment was finalized at slot 525798176. That deployment predates the shop upgrade. The six-decimal WILD mint is `BV54wR24axhu8gw8R7WVriCufYjCLYAwXJsUat94mswj`. [Deployment transaction](https://explorer.solana.com/tx/4MquswfYZVnogPjPr4Ea6V4WWLvzxJCaz7a15H2pmACwNvmzwmuHVgPhUofzxPkGqkRHQ1h2767xCaX11nY1J1yQ?cluster=devnet) · [WILD mint](https://explorer.solana.com/address/BV54wR24axhu8gw8R7WVriCufYjCLYAwXJsUat94mswj?cluster=devnet)
 
 From `chain` in a shell with Solana and Rust installed:
 
@@ -27,6 +29,8 @@ The deployment signer needs enough Devnet SOL for program rent, the temporary up
 For local integration tests, start `solana-test-validator` on port 18899 with the compiled program loaded at the address above. Run `node tests/chain.mjs` with `WILDHATCH_TEST_ISSUER` pointing to the local test signer. The test only accepts a loopback RPC.
 
 Build with `cargo build-sbf --features local-rollup` for the official local MagicBlock validator identity. Set `WILDHATCH_TEST_RPC` and `WILDHATCH_TEST_ROLLUP` to the two loopback RPC URLs to also check delegation, moves, settlement, and the single-claim reward. Use the default build for Devnet.
+
+To exercise the shop callback locally, build with `cargo build-sbf --features local-vrf` and start the MagicBlock test oracle and its Solana test queue on the local validator. Set `WILDHATCH_TEST_VRF=1` and `WILDHATCH_TEST_QUEUE=GKE6d7iv8kCBrsxr78W3xVdjGLLLJnxsGiuzrsZCGEvb` for the chain test. It checks the SOL bundle transfer, WILD burn, oracle callback, and finalized receipt ownership. The default build selects MagicBlock’s Devnet queue.
 
 ## Supabase and Vercel
 

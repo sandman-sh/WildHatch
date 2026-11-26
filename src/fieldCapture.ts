@@ -189,12 +189,12 @@ export function createFieldCapture(scene: T.Scene, ranger: T.Group) {
     finish: (() => void) | undefined,
     burstAt = -1,
     height = 1;
-  function color(type: OrbType) {
+  function color(type: OrbType, aurora = false) {
     const focus = type === "focus";
-    enamel.color.setHex(focus ? 0x8966ee : 0x20af91);
+    enamel.color.setHex(aurora ? 0xe073b8 : focus ? 0x8966ee : 0x20af91);
     gold.color.setHex(focus ? 0x9bc3ef : 0xebbc70);
     glow.color.setHex(focus ? 0xf3caff : 0xcbffc3);
-    trailMat.color.setHex(focus ? 0xc49bff : 0x84ffce);
+    trailMat.color.setHex(aurora ? 0x67fff2 : focus ? 0xc49bff : 0x84ffce);
     ringMat.color.copy(trailMat.color);
   }
   function stop() {
@@ -249,9 +249,9 @@ export function createFieldCapture(scene: T.Scene, ranger: T.Group) {
       ring.position.copy(m.position);
       ring.position.y = ground(m.position.x, m.position.z) + 0.045;
     },
-    launch(type: OrbType) {
+    launch(type: OrbType, aurora = false) {
       if (!beast || time >= 0) return;
-      color(type);
+      color(type, aurora);
       time = 0;
       releaseSet = false;
       result = undefined;

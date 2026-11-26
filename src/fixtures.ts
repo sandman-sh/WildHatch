@@ -1,3 +1,5 @@
+import { destinations } from "./destinations.ts";
+
 export type Fixture = {
   model: string;
   x: number;
@@ -27,7 +29,9 @@ export const fixtures = [
   prop("Altar", -6.4, -26, 1.8, 0, 1.55, 1.05),
   prop("Vase", -8.5, -24, 0.76, 0.35, 0.42),
   prop("cart", 7, -12, 2.3, 0.25, 1.15, 1.6),
-  prop("market", 7, -6, 3.2, 0, 2.7, 1.6),
+  ...destinations.filter(p => p.kind !== "boss").map(p =>
+    prop("market", p.x, p.z, p.kind === "shop" ? 3.6 : 3.2, 0, 2.7, 1.6)),
+
   prop("produce", 5.1, -5.9, 0.8, 0.12, 0.7),
   prop("bench", 3, 1, 1.8, -0.25, 1.6, 0.52),
   prop("bench", 12, -4, 1.8, -0.5, 1.6, 0.52),

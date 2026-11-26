@@ -86,7 +86,10 @@ export function inheritedMutation(first: string, second: string) {
   )[pair];
 }
 export type Profile = {
+  unlockedRangers?: number[];
   wild?: number;
+  charms?: number;
+  aurora?: boolean;
   frontierPosition?: [number, number];
   rangerXp?: number;
   regions?: string[];

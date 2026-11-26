@@ -1,6 +1,12 @@
 import * as T from "three";
 import { makeExplorer, animateModel } from "./models";
-import { rangerFor, rangers, selectedRanger } from "./rangers";
+import {
+  canEquip,
+  equipRanger,
+  rangerFor,
+  rangers,
+  selectedRanger,
+} from "./rangers";
 import { loadExplorer } from "./voxelExplorer";
 
 export function pickExplorer() {
@@ -13,6 +19,11 @@ export function pickExplorer() {
   const status = dialog.querySelector<HTMLElement>("#explorer-status")!;
   search.value = "";
   list.replaceChildren();
+  dialog.querySelector("#roster-progress")!.textContent =
+    rangers.filter((r) => canEquip(r.id)).length +
+    " / " +
+    rangers.length +
+    " unlocked · Find explorers in Trail and Prism boxes.";
   const scene = new T.Scene(),
     camera = new T.PerspectiveCamera(32, 1, 0.1, 15);
   let renderer: T.WebGLRenderer | undefined;
@@ -54,7 +65,7 @@ export function pickExplorer() {
     clear();
     model = makeExplorer(index);
     scene.add(model);
-    localStorage.setItem("beasts.ranger", String(index));
+    equipRanger(index);
     status.textContent = ranger.name + " selected";
     list
       .querySelectorAll<HTMLButtonElement>("[data-ranger]")
@@ -65,10 +76,18 @@ export function pickExplorer() {
         ),
       );
   }
-  for (const r of rangers) {
+  const ordered = [...rangers].sort((a, b) => Number(canEquip(b.id)) - Number(canEquip(a.id)));
+  for (const r of ordered) {
     const b = document.createElement("button");
     b.textContent = r.name;
     b.dataset.ranger = String(r.id);
+    b.disabled = !canEquip(r.id);
+    if (b.disabled) {
+      const lock = document.createElement("small");
+      lock.textContent = "Locked";
+      b.append(lock);
+      b.title = "Open a Trail or Prism box to unlock explorers.";
+    }
     const portrait = document.createElement("img");
     portrait.className = "roster-portrait desktop-only";
     portrait.alt = "";

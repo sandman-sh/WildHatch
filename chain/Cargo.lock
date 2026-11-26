@@ -4389,6 +4389,7 @@ dependencies = [
  "anchor-lang",
  "anchor-spl",
  "ephemeral-rollups-sdk",
+ "ephemeral-vrf-sdk",
 ]
 
 [[package]]

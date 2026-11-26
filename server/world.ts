@@ -1,4 +1,4 @@
-import { rangerFor } from "../src/rangers.ts";
+import { guestRanger, ownsRanger, starterRangers } from "../src/rangers.ts";
 import { createRaids } from "./raids.ts";
 import { missions, claim, survey, capture, win } from "./missions.ts";
 import { walkable } from "../src/world.ts";
@@ -7,7 +7,12 @@ import { marketplace, MarketError } from "./market.ts";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 import type { Query } from "./database.ts";
 import { profiles } from "./profiles.ts";
-import { isWildItem, wildItems, wildReward } from "../src/wildStore.ts";
+import {
+  grantWildReward,
+  isWildItem,
+  wildItems,
+  wildReward,
+} from "../src/wildStore.ts";
 import {
   habitats,
   habitatAt,
@@ -57,6 +62,8 @@ type Peer = {
   z: number;
   yaw: number;
   last: number;
+  moveCredit?: number;
+  repositionSeq?: number;
   ranger?: number;
   zone: number;
   cool: number;
@@ -154,6 +161,7 @@ export async function openWorld(
       if (previous) p.events.splice(p.events.indexOf(previous), 1);
     }
     p.events.push({ seq: ++p.seq, type, data: structuredClone(data) ?? null });
+    if (type === "position" || type === "ferry") p.repositionSeq = p.seq;
     if (p.events.length > 48) p.events.shift();
     changed = true;
   }
@@ -289,7 +297,12 @@ export async function openWorld(
     return p;
   }
 
-  async function join(t: string, mode: PlayMode, client: string) {
+  async function join(
+    t: string,
+    mode: PlayMode,
+    client: string,
+    choice?: number,
+  ) {
     const profile = mode === "guest" ? undefined : await signedIn(t);
     if (mode !== "guest" && !profile)
       throw new WorldError("Sign in with your Solana wallet.", 401);
@@ -301,6 +314,13 @@ export async function openWorld(
       else {
         const after = current.seq;
         current.touched = Date.now();
+        if (mode === "guest") current.ranger = guestRanger(t);
+        else {
+          const id = choice ?? current.ranger ?? starterRangers[0];
+          current.ranger = ownsRanger(id, profile?.unlockedRangers)
+            ? id
+            : starterRangers[0];
+        }
         send(current, "joined", current.id);
         send(current, "profile", guestSessions.get(t)?.profile ?? profile!);
         if (current.zone) send(current, "position", [current.x, current.z]);
@@ -362,6 +382,12 @@ export async function openWorld(
     }
     const p: Peer = {
       name: initial.name,
+      ranger:
+        mode === "guest"
+          ? guestRanger(t)
+          : choice !== undefined && ownsRanger(choice, profile?.unlockedRangers)
+            ? choice
+            : starterRangers[0],
       mode,
       client,
       touched: Date.now(),
@@ -398,14 +424,20 @@ export async function openWorld(
     return { peer: p, after: 0 };
   }
 
-  function encounterOffer(p: Peer, i: number) {
+  function encounterOffer(p: Peer, i: number, profile: Profile) {
     const b = p.discovery!;
     const base =
       i < habitats.length
         ? Math.max(32, 74 - i * 3)
         : 48 + Math.floor(sample(i, 1, 9) * 16);
     const rarityPenalty = 2 * Math.max(0, rarities.indexOf(b.rarity));
-    const chance = base - rarityPenalty + (p.studied ? 8 : 0);
+    const chance = Math.min(
+      90,
+      base -
+        rarityPenalty +
+        (p.studied ? 8 : 0) +
+        ((profile.charms ?? 0) > 0 ? 10 : 0),
+    );
     return {
       index: i,
       variant: b.variant,
@@ -419,7 +451,7 @@ export async function openWorld(
     };
   }
 
-  async function action(p: Peer, type: string, data: any) {
+  async function action(p: Peer, type: string, data: any, after: number) {
     const t = p.t;
     const guestProfile = guestSessions.get(t)?.profile;
     if (p.mode === "guest" && !guestProfile)
@@ -451,32 +483,46 @@ export async function openWorld(
     const now = Date.now(),
       a = guestProfile ?? (await read(t));
     if (type === "move") {
-      if (Number.isInteger(data.ranger)) p.ranger = rangerFor(data.ranger).id;
-      if (p.battle) return;
-      const { x, z, yaw } = data,
-        dist = Math.hypot(x - p.x, z - p.z),
-        allowed = 12 * Math.min(1, (now - p.last) / 1000) + 0.1;
-      const obstacles = () => {
-        const steps = Math.max(1, Math.ceil(dist / 0.4));
-        for (let step = 1; step <= steps; step++)
+      if (p.mode !== "guest" && Number.isInteger(data.ranger))
+        p.ranger = ownsRanger(data.ranger, a.unlockedRangers)
+          ? data.ranger
+          : starterRangers[0];
+      if (p.battle || after < (p.repositionSeq ?? 0)) return;
+      const { x, z, yaw } = data;
+      // Requests may arrive in bursts. Carry a small amount of unused travel time
+      // between samples and allow a delayed request up to the transport timeout.
+      const elapsed = Math.max(0, Math.min(9, (now - p.last) / 1000));
+      let remaining = (p.moveCredit ?? 2) + 12 * elapsed;
+      let fromX = p.x,
+        fromZ = p.z;
+      for (const [toX, toZ] of [...(data.path ?? []), [x, z]]) {
+        const dx = toX - fromX,
+          dz = toZ - fromZ;
+        const distance = Math.hypot(dx, dz);
+        if (distance > remaining) {
+          send(p, "position", [p.x, p.z]);
+          return;
+        }
+        const steps = Math.ceil(distance / 0.4);
+        for (let step = 1; step <= steps; step++) {
           if (
-            !walkable(
-              p.x + ((x - p.x) * step) / steps,
-              p.z + ((z - p.z) * step) / steps,
-            )
-          )
-            return true;
-        return false;
-      };
-      if (
-        ![x, z, yaw].every(Number.isFinite) ||
-        dist > allowed ||
-        obstacles()
-      ) {
-        send(p, "position", [p.x, p.z]);
-        return;
+            !walkable(fromX + (dx * step) / steps, fromZ + (dz * step) / steps)
+          ) {
+            send(p, "position", [p.x, p.z]);
+            return;
+          }
+        }
+        remaining -= distance;
+        fromX = toX;
+        fromZ = toZ;
       }
-      Object.assign(p, { x, z, yaw, last: now });
+      Object.assign(p, {
+        x,
+        z,
+        yaw,
+        last: now,
+        moveCredit: Math.min(remaining, 3),
+      });
       if (
         (!guestProfile && survey(a, x, z)) ||
         ((frontierAt(x, z) || a.frontierPosition) &&
@@ -510,7 +556,7 @@ export async function openWorld(
         ];
       }
       p.encounter = data;
-      send(p, "encounter", encounterOffer(p, data));
+      send(p, "encounter", encounterOffer(p, data, a));
       return;
     }
     if (type === "study" && !p.battle && p.encounter !== null) {
@@ -518,7 +564,7 @@ export async function openWorld(
       const h = habitatAt(i)!;
       if (Math.hypot(p.x - h[1], p.z - h[2]) <= 7) {
         p.studied = true;
-        send(p, "encounter", encounterOffer(p, i));
+        send(p, "encounter", encounterOffer(p, i, a));
       }
       return;
     }
@@ -547,6 +593,7 @@ export async function openWorld(
       }
       p.encounter = null;
       p.last = now;
+      p.moveCredit = 2;
       await checkpointPlayer(p, a);
       send(p, "ferry", [p.x, p.z]);
       return;
@@ -711,7 +758,8 @@ export async function openWorld(
       }
       p.encounter = null;
       a.orbs -= cost;
-      const odds = encounterOffer(p, i);
+      const odds = encounterOffer(p, i, a);
+      if (a.charms) a.charms--;
       if (randomInt(100) < (cost === 2 ? odds.focusChance : odds.chance)) {
         const b = p.discovery!;
         if (!guestProfile) {
@@ -740,7 +788,7 @@ export async function openWorld(
       const item = type === "buyOrbs" ? "orbs" : data;
       if (!isWildItem(item)) return;
       const { cost } = wildItems[item];
-      if ((a.wild ?? 0) < cost || a.orbs > 95) {
+      if ((a.wild ?? 0) < cost || (item !== "charm" && a.orbs > 95)) {
         send(
           p,
           "notice",
@@ -750,11 +798,17 @@ export async function openWorld(
       }
       const reward = wildReward(item, randomInt(100));
       a.wild = (a.wild ?? 0) - cost;
-      a.orbs += reward.orbs;
-      a.shards += reward.shards;
+      grantWildReward(
+        a,
+        reward,
+        item === "trail" || item === "prism" ? randomInt(2 ** 32) : undefined,
+      );
       await save(t, a);
       send(p, "profile", a);
-      if (item === "orbs") send(p, "notice", "Four orbs added to your pack.");
+      if (item === "charm")
+        send(p, "notice", "Focus Charm ready for your next wild throw.");
+      else if (item === "orbs")
+        send(p, "notice", "Four orbs added to your pack.");
       else send(p, "cacheOpened", { ...reward, kind: item });
       return;
     } else if (type === "breed") {

@@ -2,6 +2,7 @@ import * as T from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { VOXLoader, VOXMesh } from "three/examples/jsm/loaders/VOXLoader.js";
+import { destinations, destinationInk, type Destination } from "./destinations";
 import { fixtures } from "./fixtures";
 import { ground, islandPlants } from "./world";
 
@@ -67,7 +68,36 @@ export async function preloadScenery(
     }),
   );
 }
+function destinationSign(place: Destination) {
+  const ink = destinationInk[place.kind];
+  const face = document.createElement("canvas");
+  face.width = 256; face.height = 68;
+  const ctx = face.getContext("2d")!;
+  ctx.fillStyle = "#32281f"; ctx.fillRect(0, 0, 256, 68);
+  ctx.fillStyle = ink.color; ctx.fillRect(3, 3, 250, 62);
+  ctx.fillStyle = "#233b32"; ctx.fillRect(6, 6, 244, 56);
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = ink.color; ctx.font = 'bold 31px "Pixelify Sans", monospace';
+  ctx.fillText(place.name.toUpperCase(), 128, 35, 230);
+  const texture = new T.CanvasTexture(face);
+  texture.colorSpace = T.SRGBColorSpace;
+  texture.magFilter = T.NearestFilter;
+  const wood = new T.MeshStandardMaterial({color: 0x583e2c});
+  const lettered = new T.MeshBasicMaterial({map:texture});
+  const group = new T.Group();
+  const board = new T.Mesh(new T.BoxGeometry(3.6, 0.96, 0.16),
+    [wood, wood, wood, wood, lettered, lettered]);
+  board.position.y = 3.25;
+  group.add(board);
+  for (const x of [-1.52, 1.52]) {
+    const post = new T.Mesh(new T.BoxGeometry(.14, 3.8, .14), wood);
+    post.position.set(x, 1.85, -.1); group.add(post);
+  }
+  group.position.set(place.x, ground(place.x, place.z), place.z + 1);
+  return group;
+}
 export function placeScenery(scene: T.Scene) {
+  for (const site of destinations) scene.add(destinationSign(site));
   const waiting = new Set(fixtures);
   // One instanced draw per source primitive per grove; repeated trees share geometry and materials.
   const groves = new Map<string, ReturnType<typeof islandPlants>>();

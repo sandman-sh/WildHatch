@@ -1,7 +1,8 @@
+import { closestDestination, destinations, destinationInk, type Destination } from "./destinations";
 import { portraitGame } from "./displayMode";
 import { placeScenery } from "./scenery";
 import { campfire } from "./fire";
-import { rangerFor, selectedRanger } from "./rangers";
+import { rangerFor, fieldRanger } from "./rangers";
 import { hasExplorer, loadExplorer } from "./voxelExplorer";
 import { setupAtmosphere } from "./atmosphere";
 import { gameAudio } from "./audio";
@@ -68,7 +69,7 @@ sun.shadow.normalBias = 0.035;
 scene.add(sun, sun.target);
 const atmosphere = setupAtmosphere(scene, sun, hemi);
 const world = buildWorld(scene),
-  player = makeExplorer(selectedRanger()),
+  player = makeExplorer(fieldRanger),
   camera = new T.PerspectiveCamera(58, 1, 0.1, 270);
 const fire = campfire(scene, 4, -2);
 let climateClock = 0;
@@ -86,6 +87,13 @@ export function ferryRoute() {
     ...camp,
     label: camp.frontier ? "Return to trailhead" : "Sail to the frontier",
   };
+}
+export function localDestination(kind?: Destination["kind"]) {
+  return closestDestination(player.position.x, player.position.z, kind);
+}
+export function nearbyMerchant() {
+  const {place, distance} = localDestination();
+  return place.kind !== "boss" && distance <= 6.5 ? place : undefined;
 }
 export function siteAction() {
   if (guestExplorer) return null;
@@ -619,8 +627,8 @@ function drawMap(c: HTMLCanvasElement, mini = false) {
           ["Crystal Valley", -60, -16],
           ["Ocean Frontier", 2, 65],
           ["Trailhead", 0, 8],
-          ["Sanctuary", -15, -35],
-          ["Market", 19, -7],
+
+
         ];
     for (const island of outerIslands)
       labels.push([island.name, island.x, island.z]);
@@ -646,6 +654,20 @@ function drawMap(c: HTMLCanvasElement, mini = false) {
     }
   }
 
+  for (const place of destinations) {
+    const x = mapX(place.x), z = mapZ(place.z);
+    if (x < 0 || z < 0 || x > c.width || z > c.height) continue;
+    const ink = destinationInk[place.kind];
+    const offset = mini ? 0 : place.kind === "shop" ? -17 : 17;
+    const y = z + (mini ? 0 : place.kind === "boss" ? -11 : 5);
+    g.strokeStyle = ink.color;
+    g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(x, z); g.lineTo(x + offset, y); g.stroke();
+    g.fillStyle = "#203a32"; g.fillRect(x + offset - 6, y - 6, 12, 12);
+    g.strokeRect(x + offset - 6, y - 6, 12, 12);
+    g.font = "bold 10px monospace"; g.textAlign = "center"; g.fillStyle = ink.color;
+    g.fillText(ink.mark, x + offset, y + 3.5);
+  }
   g.save();
   g.translate(playerX, playerZ);
   g.rotate(-player.rotation.y);
@@ -1051,7 +1073,7 @@ function frame(now: number) {
       x: p.x,
       z: p.z,
       yaw: player.rotation.y,
-      ranger: selectedRanger(),
+      ranger: fieldRanger,
     });
     const zone = biome(p.x, p.z);
     gameAudio.setBiome(zone);
@@ -1069,8 +1091,19 @@ function frame(now: number) {
       ? targetHabitat[0] +
         " · " +
         Math.round(Math.hypot(p.x - targetHabitat[1], p.z - targetHabitat[2])) +
-        " m"
+        " m " + ["N","NE","E","SE","S","SW","W","NW"][
+          (Math.round(Math.atan2(targetHabitat[1] - p.x, p.z - targetHabitat[2]) / (Math.PI / 4)) + 8) % 8
+        ]
       : "";
+    const merchant = nearbyMerchant();
+    const prompt = document.querySelector<HTMLButtonElement>("#merchant-prompt")!;
+    prompt.hidden = !merchant;
+    if (merchant && prompt.dataset.kind !== merchant.kind) {
+      prompt.dataset.kind = merchant.kind;
+      prompt.querySelector("strong")!.textContent = merchant.name;
+      prompt.querySelector("small")!.textContent = merchant.kind === "shop" ? "Browse supplies" : "Visit trading post";
+      prompt.querySelector("use")!.setAttribute("href", merchant.kind === "shop" ? "#icon-pack" : "#icon-trade");
+    }
     const site = siteAction();
     const action =
       site === "boss"

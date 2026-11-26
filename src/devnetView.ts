@@ -1,5 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import {
+  buyWildBundle,
   assetOffer,
   collectibleTraits,
   createDuel,
@@ -18,7 +19,8 @@ import {
   wildMint,
   type OwnedCollectible,
 } from "./devnet";
-import { wildItems, type WildItem } from "./wildStore";
+import { revealShopBox, shopGrid } from "./shopGrid";
+import { rewardLabel, wildItems } from "./wildStore";
 import { battleSound, gameAudio } from "./audio";
 import { mountWalletBalances } from "./walletBalances";
 import { elements } from "./shared";
@@ -577,36 +579,92 @@ export function mountDevnetView(
     void browse();
   }
   function buildShop() {
+    const bundle = document.createElement("section");
+    bundle.className = "shop-bundle";
+    root.append(bundle);
+    add("h3", "WILD bundle", bundle);
+    add("p", "24 Devnet WILD for 0.1 Devnet SOL, plus network fees.", bundle);
+    button(
+      "Buy 24 WILD",
+      async () => reflectTx(await buyWildBundle(wallet)),
+      bundle,
+      true,
+    );
     add(
       "p",
-      "A purchase burns Devnet WILD and adds the item to your WildHatch pack.",
+      "MagicBlock verifies each box roll on-chain. Each opening also uses Devnet SOL for network fees and the receipt.",
+      root,
     );
-    link("View the Devnet WILD mint", explorer(wildMint.toBase58()));
-    const result = (reward: { orbs: number; shards: number }) => {
+    status.className = "shop-reveal";
+    const result = (purchase: Awaited<ReturnType<typeof redeemReceipt>>) => {
+      if (closed) return;
       status.textContent =
-        "Added to your pack · " +
-        reward.orbs +
-        " orbs · " +
-        reward.shards +
-        " shards";
+        "Added to your pack · " + rewardLabel(purchase.reward) + " ";
+      link(
+        "View on Solana",
+        purchase.box
+          ? explorer(purchase.box)
+          : explorer(purchase.signature, "tx"),
+        status,
+      );
+      revealShopBox(root, purchase.item, purchase.reward);
+      gameAudio.play(purchase.reward.aurora ? "rare" : "resource");
     };
-    const retry = button("Redeem pending receipt", async () => {
-      result(await redeemReceipt(wallet));
-      retry.hidden = true;
+    const retry = button("Check pending purchase", async () => {
+      try {
+        result(await redeemReceipt(wallet));
+      } finally {
+        sync();
+      }
     });
-    retry.hidden = !pendingReceipt(wallet);
-    for (const [id, item] of Object.entries(wildItems)) {
-      add("h3", item.name);
-      add("p", item.description + ".");
-      button("Buy · " + item.cost + " Devnet WILD", async () => {
-        try {
-          result(await payWithWild(wallet, id as WildItem));
-        } finally {
-          retry.hidden = !pendingReceipt(wallet);
-          void refreshBalances();
-        }
-      });
+    function sync() {
+      const pending = pendingReceipt(wallet);
+      retry.hidden = !pending;
+      status.classList.toggle("shop-awaiting", !!pending);
+      for (const control of purchases) control.disabled = !!pending;
     }
+    const purchases: HTMLButtonElement[] = [];
+    shopGrid(root, (id, card) => {
+      const control = button(
+        wildItems[id].cost + " Devnet WILD",
+        async () => {
+          try {
+            status.textContent = "Confirm in your wallet…";
+            result(
+              await payWithWild(wallet, id, () => {
+                status.textContent =
+                  "Payment submitted. Waiting for confirmation…";
+                sync();
+              }),
+            );
+          } finally {
+            sync();
+            void refreshBalances();
+          }
+        },
+        card,
+      );
+      purchases.push(control);
+    });
+    root.insertBefore(status, bundle);
+    root.insertBefore(retry, bundle);
+    sync();
+    if (pendingReceipt(wallet))
+      status.textContent = "Checking your pending purchase…";
+    poll = window.setInterval(() => {
+      if (closed || busy || !pendingReceipt(wallet)) return;
+      busy = true;
+      void redeemReceipt(wallet)
+        .then(result)
+        .catch((error: Error) => {
+          if (!closed && status.textContent !== error.message)
+            status.textContent = error.message;
+        })
+        .finally(() => {
+          busy = false;
+          sync();
+        });
+    }, 6000);
   }
   void start().catch((error) => {
     if (!closed)

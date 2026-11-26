@@ -1,3 +1,4 @@
+import { fieldRanger } from "./rangers";
 import type { PlayMode } from "./playMode";
 
 type Message = { type: string; data?: any };
@@ -15,7 +16,14 @@ function secret() {
   ).join("");
 }
 
-let guestKey = "";
+export function guestSessionId() {
+  const saved = sessionStorage.getItem("wildhatch-guest");
+  if (saved && /^[a-f0-9]{36}$/.test(saved)) return saved;
+  const id = secret();
+  sessionStorage.setItem("wildhatch-guest", id);
+  return id;
+}
+
 export function connectWorld(
   mode: PlayMode,
   receive: (message: Message) => void,
@@ -23,9 +31,7 @@ export function connectWorld(
 ) {
   // The wallet cookie identifies the player. This key identifies the live tab.
   const client = (tabKey ||= secret());
-  if (mode === "guest")
-    guestKey ||= sessionStorage.getItem("wildhatch-guest") || secret();
-  if (mode === "guest") sessionStorage.setItem("wildhatch-guest", guestKey);
+  const guestKey = mode === "guest" ? guestSessionId() : undefined;
 
   let cursor = 0;
   let ready = false;
@@ -72,6 +78,7 @@ export function connectWorld(
         mode,
         client,
         guest: mode === "guest" ? guestKey : undefined,
+        ranger: op === "join" && mode !== "guest" ? fieldRanger : undefined,
         after: cursor,
         ...action,
       }),
@@ -90,7 +97,12 @@ export function connectWorld(
     const reply: Reply = result;
     failures = 0;
     for (const event of reply.events) {
-      if (event.seq > cursor) receive(event);
+      if (event.seq <= cursor) continue;
+      if (event.type === "position" || event.type === "ferry") {
+        for (let index = pending.length - 1; index >= 0; index--)
+          if (pending[index].type === "move") pending.splice(index, 1);
+      }
+      receive(event);
     }
     cursor = Math.max(cursor, reply.cursor);
     if (reply.presence && id > latestPresence) {
@@ -192,7 +204,21 @@ export function connectWorld(
     close,
     send(type: string, data?: any) {
       if (!ready || pending.length >= 32) return;
-      if (type === "move" && pending.at(-1)?.type === "move") pending.pop();
+      const previous = pending.at(-1);
+      if (type === "move" && previous?.type === "move") {
+        const path = previous.data.path ?? [];
+        const { x, z } = previous.data;
+        if (x === data.x && z === data.z) {
+          previous.data.yaw = data.yaw;
+          previous.data.ranger = data.ranger;
+          return;
+        }
+        if (path.length < 48) {
+          path.push([x, z]);
+          previous.data = { ...data, path };
+          return;
+        }
+      }
       pending.push({ type, data });
       void drain();
     },

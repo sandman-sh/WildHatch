@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Connection, PublicKey, type ParsedInstruction } from "@solana/web3.js";
 import { wildhatchProgram } from "../src/wildhatchProgram.ts";
 import { wildItems, type WildItem } from "../src/wildStore.ts";
@@ -49,4 +50,41 @@ export async function verifyWildBurn(
   ) {
     throw Error("The payment does not match this wallet and item.");
   }
+}
+
+const boxDiscriminator = createHash("sha256")
+  .update("account:BoxOpening")
+  .digest()
+  .subarray(0, 8);
+export async function verifiedBoxRoll(
+  address: string,
+  wallet: string,
+  item: WildItem,
+  rpc = connection,
+) {
+  const key = new PublicKey(address);
+  const program = new PublicKey(wildhatchProgram);
+  const account = await rpc.getAccountInfo(key, "finalized");
+  if (!account) throw Error("Waiting for the box transaction to finalize.");
+  const data = account.data;
+  if (
+    !account.owner.equals(program) ||
+    data.length !== 50 ||
+    !data.subarray(0, 8).equals(boxDiscriminator)
+  )
+    throw Error("Invalid box receipt.");
+  const buyer = new PublicKey(data.subarray(8, 40));
+  const [expected] = PublicKey.findProgramAddressSync(
+    [Buffer.from("box"), buyer.toBuffer(), data.subarray(40, 48)],
+    program,
+  );
+  if (
+    !expected.equals(key) ||
+    buyer.toBase58() !== wallet ||
+    (item !== "trail" && item !== "prism") ||
+    data[48] !== (item === "trail" ? 0 : 1)
+  )
+    throw Error("This box belongs to a different purchase.");
+  if (data[49] > 99) throw Error("Waiting for the MagicBlock reveal.");
+  return data[49];
 }

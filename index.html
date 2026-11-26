@@ -99,6 +99,7 @@
           aria-label="Search explorers"
           placeholder="Search explorers"
         />
+        <small id="roster-progress"></small>
         <div id="roster"></div>
         <p id="explorer-status" role="status"></p>
       </div>
@@ -174,6 +175,10 @@
         ><strong id="objective">First encounter</strong>
         <p id="questText">Approach a wild beast along the trail.</p>
       </section>
+      <button id="merchant-prompt" type="button" hidden>
+        <svg class="hud-icon" aria-hidden="true"><use href="#icon-pack"/></svg>
+        <span><strong></strong><small></small></span><kbd>F</kbd>
+      </button>
       <section class="actions">
         <button id="interact" aria-label="Scan habitats"><svg class="hud-icon" aria-hidden="true"><use href="#icon-scan"/></svg><span class="action-label">Scan</span><kbd>E</kbd></button>
       </section>

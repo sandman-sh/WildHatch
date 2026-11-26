@@ -6,6 +6,8 @@ import {
   portraitGame,
   syncRotationPrompt,
 } from "./displayMode";
+import { revealShopBox, shopGrid } from "./shopGrid";
+import { rewardLabel, wildItems } from "./wildStore";
 import "./style.css";
 import "./field.css";
 import "./fieldControls.css";
@@ -19,6 +21,8 @@ import {
   configure,
   nearest,
   siteAction,
+  localDestination,
+  nearbyMerchant,
   freeze,
   quality,
   presence,
@@ -43,7 +47,7 @@ import {
   beastStats,
   inheritedMutation,
 } from "./shared";
-import { selectedRanger, rangerFor } from "./rangers";
+import { fieldRanger, rangerFor } from "./rangers";
 import type { Profile, Beast } from "./shared";
 import type { PlayMode, WorldPlayer } from "./playMode";
 const find = <E extends HTMLElement = HTMLElement>(s: string) =>
@@ -71,7 +75,7 @@ let tasks: {
 let market: { listings: any[]; history: any[] } = { listings: [], history: [] };
 let listingId = "";
 let castMethod: import("./fieldCapture").OrbType = "standard";
-const guestViews = new Set(["map", "scan", "pack", "profile", "settings"]);
+const guestViews = new Set(["map", "scan", "pack", "profile", "settings", "shop", "market"]);
 let nearbyRangers: WorldPlayer[] = [];
 let nearbyLabel = "";
 let mode: PlayMode = "normal";
@@ -340,7 +344,9 @@ function renderCapture() {
         : name + " caught!"
       : phase === "escaped"
         ? name + " broke free"
-        : profile.orbs + " orbs";
+        : profile.orbs +
+          " orbs" +
+          (profile.charms ? " · Focus Charm ready" : "");
   for (const button of orbButtons) {
     button.setAttribute(
       "aria-pressed",
@@ -409,7 +415,7 @@ function actOnCapture() {
   }
   phase = "casting";
   renderCapture();
-  fieldCapture.launch(castMethod);
+  fieldCapture.launch(castMethod, profile.aurora);
   send("capture", castMethod);
   throwTimer = window.setTimeout(() => {
     leaveCapture();
@@ -462,7 +468,7 @@ for (const button of orbButtons)
   button.onclick = () => {
     if (phase !== "aim") return;
     castMethod = button.dataset.orb === "focus" ? "focus" : "standard";
-    fieldCapture.color(castMethod);
+    fieldCapture.color(castMethod, profile.aurora);
     gameAudio.play("ui");
     renderCapture();
   };
@@ -520,6 +526,13 @@ function display(key: string, collectibleMint?: string) {
       "p",
       "Gold marks your position and heading. Squares mark wild habitats.",
     );
+    for (const [kind, mark] of [["shop", "S"], ["market", "T"], ["boss", "R"]] as const) {
+      const {place} = localDestination(kind);
+      button(mark + " · Track " + place.name + " · " + place.district, () => {
+        trackPlace([place.name, place.x, place.z]);
+        close();
+      });
+    }
     const ferryButton = button("Track ferry camp", () => {
       const ferry = ferryRoute();
       if (ferry.ready) send("ferry");
@@ -573,12 +586,12 @@ function display(key: string, collectibleMint?: string) {
   if (key === "profile") {
     const username = line("h2", profile.name);
     const portrait = document.createElement("img");
-    portrait.src = "/ranger-portraits/" + selectedRanger() + ".webp";
+    portrait.src = "/ranger-portraits/" + fieldRanger + ".webp";
     portrait.className = "ranger-portrait";
-    portrait.alt = rangerFor(selectedRanger()).name;
+    portrait.alt = rangerFor(fieldRanger).name;
     content.append(portrait);
     if (mode === "guest") {
-      line("p", "Guest visit · " + profile.orbs + " practice orbs remaining");
+      line("p", rangerFor(fieldRanger).name + " · Guest visit · " + profile.orbs + " practice orbs remaining");
     } else {
       mountUsernameEditor(content, profile.name, (name) => {
         username.textContent = name;
@@ -586,7 +599,7 @@ function display(key: string, collectibleMint?: string) {
       const xp = profile.rangerXp ?? 0;
       line(
         "p",
-        rangerFor(selectedRanger()).name +
+        rangerFor(fieldRanger).name +
           " · Ranger level " +
           (1 + Math.floor(xp / 50)),
       );
@@ -842,6 +855,9 @@ function display(key: string, collectibleMint?: string) {
     );
     button("Refill orbs", () => send("supply"), true).disabled =
       profile.orbs >= 8;
+    if (profile.charms)
+      line("p", profile.charms + " Focus Charms · next wild throw boosted");
+    if (profile.aurora) line("p", "Aurora orb finish equipped");
     button("Wild shop", () => display("shop"));
     const camp = ferryRoute();
     button(camp.frontier ? "Track frontier camp" : "Track trailhead", () => {
@@ -855,20 +871,28 @@ function display(key: string, collectibleMint?: string) {
   }
   if (key === "shop") {
     line("h2", "Wild shop");
+    if (mode === "guest") {
+      line("p", "Guest preview · Connect a wallet from the main menu to purchase supplies.");
+      shopGrid(content, (id, card) => line("small", wildItems[id].cost + " Game WILD", card));
+      button("Continue exploring", close);
+      return;
+    }
     line("p", (profile.wild ?? 0) + " game WILD available");
     line(
       "p",
       "Win an arena duel by knockout to earn 12 WILD for the shop and trading post.",
     );
-    button("4 capture orbs · 4 WILD", () => send("buyOrbs"), true).disabled =
-      (profile.wild ?? 0) < 4 || profile.orbs > 95;
-    line("h3", "Mystery boxes");
-    line("p", "Trail box · 70% for 3 orbs and 1 shard, 30% for 4 shards.");
-    button("Trail box · 6 WILD", () => send("openCache", "trail")).disabled =
-      (profile.wild ?? 0) < 6 || profile.orbs > 95;
-    line("p", "Prism box · 75% for 4 orbs and 3 shards, 25% for 8 shards.");
-    button("Prism box · 12 WILD", () => send("openCache", "prism")).disabled =
-      (profile.wild ?? 0) < 12 || profile.orbs > 95;
+    shopGrid(content, (id, card) => {
+      const item = wildItems[id];
+      button(
+        item.cost + " Game WILD",
+        () => send(id === "orbs" ? "buyOrbs" : "openCache", id),
+        false,
+        card,
+      ).disabled =
+        (profile.wild ?? 0) < item.cost ||
+        (id !== "charm" && profile.orbs > 95);
+    });
     button("Devnet WILD shop", () => display("devnet-shop"));
   }
   if (
@@ -930,6 +954,11 @@ function display(key: string, collectibleMint?: string) {
   if (key === "pack") button("Trading post", () => send("market"));
   if (key === "market") {
     line("h2", "Trading post");
+    if (mode === "guest") {
+      line("p", "Rangers list their beasts here for other players. Connect a wallet from the main menu to browse listings and trade.");
+      button("Continue exploring", close);
+      return;
+    }
     button("Devnet escrow", () => display("escrow"));
     button("Wallet collectibles", () => display("owned-collectibles"));
     line(
@@ -1341,6 +1370,14 @@ document
 find("#active-shortcut").onclick = () =>
   inspect(profile.collection.find((b) => b.id === profile.active)!);
 find("#missions").onclick = () => send("missions");
+function visitMerchant() {
+  const place = nearbyMerchant();
+  if (!place || !profile || mode === "pvp" || phase || panel.open) return;
+  gameAudio.play("ui");
+  if (place.kind === "market" && mode !== "guest") send("market");
+  else display(place.kind);
+}
+find("#merchant-prompt").onclick = visitMerchant;
 const interact = () => {
   if (!profile || mode === "pvp") return;
   if (phase === "caught") leaveCapture();
@@ -1380,11 +1417,12 @@ addEventListener("keydown", (e) => {
     b: "arena",
   };
   if (menus[k]) display(menus[k]);
+  if (k === "f") visitMerchant();
   if (k === "e") interact();
 });
 function hud() {
   find<HTMLImageElement>("#ranger-headshot").src =
-    "/ranger-portraits/" + selectedRanger() + ".webp";
+    "/ranger-portraits/" + fieldRanger + ".webp";
   const companion = profile.collection.find((b) => b.id === profile.active);
   setWorldIdentity(profile.name, mode === "guest");
   selectCompanion(companion);
@@ -1584,7 +1622,7 @@ export async function joinExpedition(playMode = mode) {
             castMethod = "standard";
           find<HTMLDetailsElement>(".field-tools").open = false;
           frameEncounter(data.index);
-          fieldCapture.color(castMethod);
+          fieldCapture.color(castMethod, profile.aurora);
           freeze(true);
           renderCapture();
           if (!data.studied) throwButton.focus({ preventScroll: true });
@@ -1611,14 +1649,13 @@ export async function joinExpedition(playMode = mode) {
           display("arena");
           break;
         case "cacheOpened":
-          gameAudio.play("resource");
+          if (view === "shop" && panel.open)
+            revealShopBox(content, data.kind, data);
+          gameAudio.play(data.aurora ? "rare" : "resource");
           notice(
             (data.kind === "prism" ? "Prism box" : "Trail box") +
-              " opened · +" +
-              data.orbs +
-              " orbs · +" +
-              data.shards +
-              " shards",
+              " opened · " +
+              rewardLabel(data),
           );
           break;
         case "battle":

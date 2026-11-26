@@ -5,6 +5,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { createApi } from "../server/api.ts";
 import { EventEmitter, once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
+import { starterRangers, rangers, ownsRanger } from "../src/rangers.ts";
+import { wildReward, grantWildReward } from "../src/wildStore.ts";
+import { walkable } from "../src/world.ts";
 import { siteId, frontierSite } from "../src/frontier.ts";
 import { generateKeyPairSync, randomBytes, sign } from "node:crypto";
 import bs58 from "bs58";
@@ -44,7 +47,16 @@ const transact = (_write, run) =>
     await tx.exec("SET LOCAL search_path = wildhatch");
     return run((sql, params) => tx.query(sql, params));
   });
-const instances = [createApi(transact), createApi(transact)];
+const receiptAddress = Keypair.generate().publicKey.toBase58();
+const testRoll = async (address, _wallet, item) => {
+  assert.equal(address, receiptAddress);
+  assert.equal(item, "prism");
+  return 9;
+};
+const instances = [
+  createApi(transact, testRoll),
+  createApi(transact, testRoll),
+];
 let instance = 0;
 const server = createServer(
   (req, res) => void instances[instance++ % 2](req, res),
@@ -88,7 +100,7 @@ const worldPost = (cookie, data) =>
     },
     body: JSON.stringify(data),
   });
-async function connect(mode, cookie, guestId) {
+async function connect(mode, cookie, guestId, ranger) {
   const ws = new EventEmitter();
   const inbox = [];
   const client = randomBytes(18).toString("hex");
@@ -152,7 +164,7 @@ async function connect(mode, cookie, guestId) {
     }
     throw Error("Timed out waiting for " + type);
   }
-  await request("join");
+  await request("join", { ranger });
   await next("joined");
   const profile = await next("profile");
   const spawn = mode === "pvp" ? null : await next("position");
@@ -169,9 +181,13 @@ async function connect(mode, cookie, guestId) {
     },
   };
 }
-async function ranger(mode = "normal", key = generateKeyPairSync("ed25519")) {
+async function ranger(
+  mode = "normal",
+  key = generateKeyPairSync("ed25519"),
+  choice,
+) {
   const { cookie } = await walletLogin(key);
-  return connect(mode, cookie);
+  return connect(mode, cookie, undefined, choice);
 }
 try {
   assert.equal((await fetch(base + "/api/profile")).status, 401);
@@ -187,7 +203,7 @@ try {
     assert.equal(response.status, 401);
   }
   const key = generateKeyPairSync("ed25519");
-  const a = await ranger("normal", key),
+  const a = await ranger("normal", key, 7),
     b = await ranger();
   const traitBeast = {
     ...a.profile.collection[0],
@@ -319,6 +335,13 @@ try {
     headers: { cookie: a.cookie },
   });
   assert.equal((await session.json()).wallet, a.profile.wallet);
+  await pg.query(
+    "UPDATE wildhatch.profiles SET data=jsonb_set(data,'{wild}','5') WHERE data->>'wallet'=$1",
+    [a.profile.wallet],
+  );
+  a.send("openCache", "charm");
+  const charmed = await a.next("profile", (p) => p.charms === 1);
+  assert.equal(charmed.wild, 0);
   let orbs = a.profile.orbs,
     caught = false,
     offspringParents = [];
@@ -327,11 +350,11 @@ try {
     a.send("encounter", 0);
     const offer = await a.next("encounter");
     assert.equal(offer.index, 0);
-    assert.equal(offer.chance, 74 - offer.rarityPenalty);
+    assert.equal(offer.chance, 74 - offer.rarityPenalty + (i === 0 ? 10 : 0));
     for (let j = 0; j < 2; j++) {
       a.send("study");
       const studied = await a.next("encounter");
-      assert.equal(studied.chance, offer.chance + 8);
+      assert.equal(studied.chance, Math.min(90, offer.chance + 8));
       assert.equal(studied.focusChance, Math.min(90, studied.chance + 10));
     }
     const focused = i === 0;
@@ -344,6 +367,7 @@ try {
     const p = await a.next("profile");
     orbs -= focused ? 2 : 1;
     assert.equal(p.orbs, orbs);
+    assert.equal(p.charms, 0);
     caught = p.collection.length === 2;
     if (caught) {
       offspringParents = p.collection.map((b) => b.id);
@@ -405,7 +429,12 @@ try {
   a.send("openCache", "trail");
   const loot = await a.next("cacheOpened");
   assert.equal(loot.kind, "trail");
-  assert.ok(loot.shards === 4 || loot.orbs === 3);
+  assert.ok(
+    !starterRangers.includes(loot.ranger) &&
+      rangers.some((r) => r.id === loot.ranger),
+  );
+  assert.equal(loot.orbs, 3);
+  assert.equal(loot.shards + loot.charms, 1);
   assert.equal(
     (await a.next("profile", (state) => state.wild === 2)).shards,
     supplied.shards + loot.shards,
@@ -498,7 +527,7 @@ try {
     "PASS: 24 separated spawns in one world, shared frontier habitat, frontier movement and camp return",
   );
 
-  const guestId = randomBytes(18).toString("hex");
+  const guestId = "00000001" + randomBytes(14).toString("hex");
   const visitor = await connect("guest", undefined, guestId);
   await transact(true, async (query) => {
     const {
@@ -513,7 +542,7 @@ try {
   const another = await connect(
     "guest",
     b.cookie,
-    randomBytes(18).toString("hex"),
+    "00000002" + randomBytes(14).toString("hex"),
   );
   assert.match(visitor.profile.name, /^Guest \d{5}$/);
   assert.notEqual(another.profile.name, visitor.profile.name);
@@ -533,6 +562,23 @@ try {
       list.some((peer) => peer.name === visitor.profile.name),
     )
   ).find((peer) => peer.name === visitor.profile.name);
+  assert.equal(visibleVisitor.ranger, 6);
+  assert.equal(
+    (
+      await visitor.next("presence", (list) =>
+        list.some((peer) => peer.name === a.profile.name),
+      )
+    ).find((peer) => peer.name === a.profile.name).ranger,
+    7,
+  );
+  assert.equal(
+    (
+      await a.next("presence", (list) =>
+        list.some((peer) => peer.name === another.profile.name),
+      )
+    ).find((peer) => peer.name === another.profile.name).ranger,
+    7,
+  );
   assert.equal(visibleVisitor.beast, null);
   assert.equal(visibleVisitor.guest, true);
   await visitor.next("presence", (list) =>
@@ -583,13 +629,85 @@ try {
     guest: guestId,
   });
   assert.equal(resumed.status, 200);
+  const resumeState = await resumed.json();
   assert.deepEqual(
-    (await resumed.json()).events.map((event) => event.type),
+    resumeState.events.map((event) => event.type),
     ["joined", "profile", "position", "habitats"],
+  );
+  const origin = resumeState.events.find((e) => e.type === "position").data;
+  let direction;
+  for (let i = 0; i < 64 && !direction; i++) {
+    const dx = Math.cos((i * Math.PI) / 32),
+      dz = Math.sin((i * Math.PI) / 32);
+    if (
+      Array.from({ length: 70 }, (_, n) => (n + 1) / 4).every((d) =>
+        walkable(origin[0] + dx * d, origin[1] + dz * d),
+      )
+    )
+      direction = [dx, dz];
+  }
+  assert.ok(direction, "expected a clear route out of the guest spawn");
+  const point = (distance) =>
+    origin.map((v, axis) => v + distance * direction[axis]);
+  const move = async (distance, after, path = []) => {
+    const [x, z] = point(distance);
+    const response = await worldPost(undefined, {
+      op: "action",
+      type: "move",
+      client: visitor.client,
+      guest: guestId,
+      mode: "guest",
+      after,
+      data: { x, z, yaw: 0, path },
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  await delay(1800);
+  const delayed = await move(15, resumeState.cursor, [point(7)]);
+  assert.equal(delayed.events.length, 0, "valid delayed sprint was corrected");
+  const burst = await move(16.5, delayed.cursor);
+  assert.equal(
+    burst.events.length,
+    0,
+    "closely spaced update lost travel credit",
+  );
+  const rejected = await move(1000, burst.cursor);
+  const correction = rejected.events.find((e) => e.type === "position");
+  assert.deepEqual(
+    correction?.data,
+    point(16.5),
+    "correction must use the last accepted position",
+  );
+  const stale = await move(15, burst.cursor);
+  assert.equal(
+    stale.cursor,
+    rejected.cursor,
+    "stale movement triggered another correction",
+  );
+  const afterCorrection = await move(1000, stale.cursor);
+  assert.deepEqual(
+    afterCorrection.events[0]?.data,
+    point(16.5),
+    "stale movement overwrote the correction",
+  );
+  console.log(
+    "PASS: delayed sprint, burst movement and stale updates after a correction",
   );
   visitor.ws.close();
   await once(visitor.ws, "close");
-  const rejoined = await connect("guest", undefined, guestId);
+  const rejoined = await connect("guest", undefined, guestId, 0);
+  assert.equal(
+    (
+      await a.next("presence", (list) =>
+        list.some((peer) => peer.name === rejoined.profile.name),
+      )
+    ).find((peer) => peer.name === rejoined.profile.name).ranger,
+    6,
+  );
+  console.log(
+    "PASS: guests have session-specific characters and signed-in players publish their chosen character at spawn",
+  );
   assert.deepEqual(rejoined.profile, { ...visitor.profile, orbs: 0 });
 
   const [host, challenger, third] = await Promise.all(
@@ -607,6 +725,87 @@ try {
   assert.equal(
     third.inbox.some(({ type }) => type === "battle" || type === "presence"),
     false,
+  );
+  const redeem = (cookie) =>
+    fetch(base + "/api/wild-receipt", {
+      method: "POST",
+      headers: { origin: base, cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ item: "prism", box: receiptAddress }),
+    });
+  const receipts = await Promise.all([
+    redeem(third.cookie),
+    redeem(third.cookie),
+  ]);
+  let earned;
+  for (const receipt of receipts) {
+    assert.equal(receipt.status, 200);
+    const reward = await receipt.json();
+    earned ??= reward.ranger;
+    assert.ok(
+      rangers.some((r) => r.id === earned) && !starterRangers.includes(earned),
+    );
+    assert.deepEqual(reward, {
+      ranger: earned,
+      orbs: 4,
+      shards: 3,
+      charms: 0,
+      aurora: true,
+    });
+  }
+  assert.equal((await redeem(host.cookie)).status, 400);
+  const updated = (
+    await pg.query(
+      "SELECT data FROM wildhatch.profiles WHERE data->>'name'=$1",
+      [third.profile.name],
+    )
+  ).rows[0].data;
+  assert.equal(updated.orbs, third.profile.orbs + 4);
+  assert.equal(updated.shards, third.profile.shards + 3);
+  assert.equal(updated.aurora, true);
+  assert.deepEqual(updated.unlockedRangers, [earned]);
+  const walletRoster = async (cookie) =>
+    (await fetch(base + "/api/session", { headers: { cookie } })).json();
+  assert.deepEqual((await walletRoster(third.cookie)).unlockedRangers, [
+    earned,
+  ]);
+  assert.deepEqual((await walletRoster(host.cookie)).unlockedRangers, []);
+  for (const [player, expected] of [
+    [third, earned],
+    [host, starterRangers[0]],
+  ]) {
+    const join = await worldPost(player.cookie, {
+      op: "join",
+      mode: "pvp",
+      client: player.client,
+      ranger: earned,
+    });
+    assert.equal(join.status, 200);
+    const peer = (
+      await pg.query(
+        "SELECT state FROM wildhatch.world_peers WHERE state->>'client'=$1",
+        [player.client],
+      )
+    ).rows[0].state;
+    assert.equal(peer.ranger, expected);
+  }
+  assert.deepEqual(starterRangers, [0, 6, 7, 8, 9, 10]);
+  const almostFull = {
+    orbs: 0,
+    shards: 0,
+    unlockedRangers: rangers.slice(6, -1).map((r) => r.id),
+  };
+  for (let i = 0; i < 2; i++) {
+    const reward = wildReward("trail", 33);
+    grantWildReward(almostFull, reward, 99);
+    assert.equal(reward.ranger, i === 0 ? rangers.at(-1).id : undefined);
+  }
+  assert.ok(rangers.every((r) => ownsRanger(r.id, almostFull.unlockedRangers)));
+  assert.equal(almostFull.orbs, 6);
+  console.log(
+    "PASS: starter roster, wallet-bound box unlock, equip authorization and completed roster",
+  );
+  console.log(
+    "PASS: concurrent box redemptions grant once and bind the reward to the purchasing wallet",
   );
   const signals = await pg.query(
     "SELECT DISTINCT payload, event, topic, private FROM realtime.test_signals",
