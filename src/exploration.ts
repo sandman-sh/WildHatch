@@ -104,11 +104,15 @@ export function siteAction() {
 }
 player.position.y = ground(0, 0);
 const wild = new Map<number, T.Group>(),
+  wildSpots = new Map<number, readonly [string, number, number]>(),
   spent = new Set<number>();
+function siteFor(i: number) {
+  return wildSpots.get(i) ?? habitatAt(i);
+}
 const frontierTerrain = streamFrontier(scene);
 let wildlifeCell = "";
 function addWild(i: number, variant: number) {
-  const [name, x, z] = habitatAt(i)!;
+  const [name, x, z] = siteFor(i)!;
   const m = makeCreature(name, variant);
   m.position.set(x, ground(x, z) + (m.userData.flight?.altitude ?? 0), z);
   m.visible = !spent.has(i);
@@ -129,7 +133,7 @@ function streamWild(x: number, z: number) {
   if (cell === wildlifeCell) return;
   wildlifeCell = cell;
   const sites = nearbySites(x, z).filter((id) => {
-    const h = habitatAt(id)!;
+    const h = siteFor(id)!;
     return Math.hypot(h[1] - x, h[2] - z) < 86;
   });
   for (const i of wild.keys()) if (i >= 32 && !sites.includes(i)) dropWild(i);
@@ -266,7 +270,7 @@ export function availableHabitats() {
   return [...signals]
     .filter((i) => !spent.has(i))
     .map((i) => {
-      const [name, hx, hz] = habitatAt(i)!;
+      const [name, hx, hz] = siteFor(i)!;
       const dx = hx - x,
         dz = hz - z;
       return {
@@ -445,9 +449,23 @@ export function relocate(x: number, z: number) {
 }
 export function setHabitats(variants: number[]) {
   spent.clear();
+  wildSpots.clear();
   wildlifeCell = "";
   for (const i of wild.keys()) dropWild(i);
   variants.forEach((v, i) => addWild(i, v));
+}
+export function setSpots(spots: Record<string, [number, number]>) {
+  for (const [key, pos] of Object.entries(spots)) {
+    const id = Number(key);
+    const base = habitatAt(id);
+    if (!base) continue;
+    wildSpots.set(id, [base[0], pos[0], pos[1]]);
+    const m = wild.get(id);
+    if (m) {
+      dropWild(id);
+      addWild(id, Math.floor(Math.random() * 65536));
+    }
+  }
 }
 export function removeWild(i: number) {
   spent.add(i);
@@ -455,11 +473,16 @@ export function removeWild(i: number) {
   if (m) m.visible = false;
   if (trackedHabitat === i) trackedHabitat = -1;
 }
-export function respawnWild(i: number, variant?: number) {
+export function respawnWild(
+  i: number,
+  variant?: number,
+  pos?: [number, number],
+) {
+  const base = habitatAt(i);
+  if (!base) return;
+  if (pos) wildSpots.set(i, [base[0], pos[0], pos[1]]);
   spent.delete(i);
   dropWild(i);
-  const h = habitatAt(i);
-  if (!h) return;
   addWild(i, variant ?? Math.floor(Math.random() * 65536));
 }
 function removeRemote(model?: T.Group) {
@@ -619,7 +642,7 @@ function drawMap(c: HTMLCanvasElement, mini = false) {
   if (landmark) waypoint(landmark[1], landmark[2]);
   for (const [i, m] of wild) {
     if (!m.visible) continue;
-    const [, x, z] = habitatAt(i)!;
+    const [, x, z] = siteFor(i)!;
     const mx = mapX(x),
       mz = mapZ(z);
     if (mx < -6 || mz < -6 || mx > c.width + 6 || mz > c.height + 6) continue;
@@ -1083,7 +1106,7 @@ function frame(now: number) {
       );
       return;
     }
-    const [, hx, hz] = habitatAt(i)!;
+    const [, hx, hz] = siteFor(i)!;
     const distanceToHabitat = Math.hypot(p.x - hx, p.z - hz);
     if (distanceToHabitat > 58) return;
     const distance = Math.hypot(p.x - m.position.x, p.z - m.position.z);
@@ -1260,7 +1283,7 @@ function frame(now: number) {
     document.querySelector("#coords")!.textContent =
       "X " + Math.round(p.x) + " / Z " + Math.round(p.z);
     const targetHabitat =
-      landmark ?? (trackedHabitat >= 0 ? habitatAt(trackedHabitat) : undefined);
+      landmark ?? (trackedHabitat >= 0 ? siteFor(trackedHabitat) : undefined);
     document.querySelector("#trail-target")!.textContent = targetHabitat
       ? targetHabitat[0] +
         " · " +
@@ -1297,7 +1320,7 @@ function frame(now: number) {
     }
     interact.setAttribute(
       "aria-label",
-      action === "Catch" ? "Catch " + habitatAt(nearest)![0] : action,
+      action === "Catch" ? "Catch " + siteFor(nearest)![0] : action,
     );
   }
   if (now - lastMapDraw >= 32) {

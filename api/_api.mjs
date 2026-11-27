@@ -38739,6 +38739,40 @@ function beast(name) {
     history: ["Discovered on the island"]
   };
 }
+function peerSite(p, id) {
+  const base = habitatAt(id);
+  if (!base) return void 0;
+  const moved = p.spots?.[id];
+  return moved ? [base[0], moved[0], moved[1]] : base;
+}
+function goodLandTile(x, z) {
+  if (fluid(x, z) !== "land" || !walkable(x, z)) return false;
+  const h0 = ground(x, z);
+  return [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1]
+  ].some(
+    ([dx, dz]) => fluid(x + dx, z + dz) === "land" && walkable(x + dx, z + dz) && Math.abs(ground(x + dx, z + dz) - h0) <= 0.6
+  );
+}
+function randomLandSpot(p, id, avoidX, avoidZ) {
+  const base = habitatAt(id);
+  const frontier = id >= habitats.length;
+  for (const minDist of [22, 12]) {
+    for (let attempt = 0; attempt < 160; attempt++) {
+      const rx = frontier ? Math.round(base[1] + randomInt2(-52, 53)) : randomInt2(-76, 77);
+      const rz = frontier ? Math.round(base[2] + randomInt2(-52, 53)) : randomInt2(-76, 77);
+      if (frontier && !frontierAt(rx, rz)) continue;
+      if (!frontier && Math.hypot(rx, rz) < 12) continue;
+      if (Math.hypot(rx - avoidX, rz - avoidZ) < minDist) continue;
+      if (!goodLandTile(rx, rz)) continue;
+      return [rx, rz];
+    }
+  }
+  return [base[1], base[2]];
+}
 var WorldError = class extends Error {
   status;
   constructor(message, status) {
@@ -38977,6 +39011,8 @@ async function openWorld(query, scope) {
           "habitats",
           current.wild.map((b) => b.variant)
         );
+        if (current.spots && Object.keys(current.spots).length)
+          send(current, "spots", current.spots);
         if (current.battle) await battleView(duels.get(current.battle));
         return { peer: current, after };
       }
@@ -39151,7 +39187,7 @@ async function openWorld(query, scope) {
     }
     if (type === "encounter" && !p.battle) {
       if (!Number.isInteger(data)) return;
-      const h = habitatAt(data);
+      const h = peerSite(p, data);
       if (!h || p.spent.has(data) || Math.hypot(p.x - h[1], p.z - h[2]) > 7)
         return;
       p.studied = false;
@@ -39171,7 +39207,7 @@ async function openWorld(query, scope) {
     }
     if (type === "study" && !p.battle && p.encounter !== null) {
       const i = p.encounter;
-      const h = habitatAt(i);
+      const h = peerSite(p, i);
       if (Math.hypot(p.x - h[1], p.z - h[2]) <= 7) {
         p.studied = true;
         send(p, "encounter", encounterOffer(p, i, a));
@@ -39335,7 +39371,8 @@ async function openWorld(query, scope) {
         return;
       }
       const cost = data === "focus" ? 2 : 1;
-      if (i === null || a.orbs < cost || Math.hypot(p.x - habitatAt(i)[1], p.z - habitatAt(i)[2]) > 7) {
+      const site = i === null ? void 0 : peerSite(p, i);
+      if (i === null || !site || a.orbs < cost || Math.hypot(p.x - site[1], p.z - site[2]) > 7) {
         send(
           p,
           "captureUnavailable",
@@ -39349,14 +39386,18 @@ async function openWorld(query, scope) {
       if (a.charms) a.charms--;
       if (randomInt2(100) < (cost === 2 ? odds.focusChance : odds.chance)) {
         const b = p.discovery;
-        const species = habitatAt(i)[0];
+        const species = site[0];
         const respawn = beast(species);
-        if (i < habitats.length) p.wild[i] = respawn;
-        else {
-          p.respawned ??= {};
-          p.respawned[i] = respawn;
-        }
+        let respawnPos;
         if (!guestProfile) {
+          respawnPos = randomLandSpot(p, i, p.x, p.z);
+          p.spots ??= {};
+          p.spots[i] = respawnPos;
+          if (i < habitats.length) p.wild[i] = respawn;
+          else {
+            p.respawned ??= {};
+            p.respawned[i] = respawn;
+          }
           a.collection.push(b);
           capture(a);
           a.rangerXp = (a.rangerXp ?? 0) + 10;
@@ -39365,7 +39406,8 @@ async function openWorld(query, scope) {
           index: i,
           beast: b,
           practice: !!guestProfile,
-          respawnVariant: respawn.variant
+          respawnVariant: respawn.variant,
+          respawnPos
         });
       } else send(p, "escaped", { index: i, cost });
     } else if (type === "claim") {

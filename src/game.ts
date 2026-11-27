@@ -29,6 +29,7 @@ import {
   presence,
   relocate,
   setHabitats,
+  setSpots,
   removeWild,
   respawnWild,
   updateGuardian,
@@ -223,7 +224,10 @@ function inspect(b: Beast) {
   display("detail");
 }
 function journal() {
-  line("h2", "Field journal");
+  const activeCompanion = profile.collection.find(
+    (b) => b.id === profile.active,
+  );
+  line("h2", "My caught beasts");
   line(
     "p",
     profile.collection.length +
@@ -231,7 +235,8 @@ function journal() {
       new Set(profile.collection.map((b) => b.name)).size +
       " of " +
       Object.keys(elements).length +
-      " species",
+      " species" +
+      (activeCompanion ? " · Following: " + activeCompanion.name : ""),
   );
   const sort = choose(
     "Sort by",
@@ -311,7 +316,9 @@ const studyButton = find<HTMLButtonElement>("#study-wild");
 const leaveButton = find<HTMLButtonElement>("#leave-catch");
 const orbButtons = [...field.querySelectorAll<HTMLButtonElement>("[data-orb]")];
 let catchesBeast: Beast | undefined;
-let pendingRespawn: { index: number; variant?: number } | undefined;
+let pendingRespawn:
+  | { index: number; variant?: number; pos?: [number, number] }
+  | undefined;
 function swapCompanion(b: Beast) {
   if (!profile || b.id === profile.active) return;
   gameAudio.play("ui");
@@ -326,7 +333,11 @@ function leaveCapture() {
   clearTimeout(throwTimer);
   fieldCapture.stop();
   if (pendingRespawn) {
-    respawnWild(pendingRespawn.index, pendingRespawn.variant);
+    respawnWild(
+      pendingRespawn.index,
+      pendingRespawn.variant,
+      pendingRespawn.pos,
+    );
     pendingRespawn = undefined;
   } else if (catchesBeast) removeWild(offer.index);
   field.hidden = true;
@@ -452,8 +463,8 @@ function actOnCapture() {
 }
 function resolveThrow(result: string, data: any) {
   if (phase !== "casting") {
-    if (result === "caught")
-      respawnWild(data.index, data.respawnVariant);
+    if (result === "caught" && !data.practice)
+      respawnWild(data.index, data.respawnVariant, data.respawnPos);
     return;
   }
   clearTimeout(throwTimer);
@@ -463,14 +474,17 @@ function resolveThrow(result: string, data: any) {
     return;
   }
   const outcome = result === "caught" ? "caught" : "escaped";
-  if (outcome === "caught") {
-    if (!data.practice) catchesBeast = data.beast;
-    pendingRespawn = { index: data.index, variant: data.respawnVariant };
+  if (outcome === "caught" && !data.practice) {
+    catchesBeast = data.beast;
+    pendingRespawn = {
+      index: data.index,
+      variant: data.respawnVariant,
+      pos: data.respawnPos,
+    };
   }
   fieldCapture.resolve(outcome, () => {
     if (outcome === "caught") {
-      if (!data.practice)
-        respawnWild(data.index, data.respawnVariant);
+      if (!data.practice) removeWild(data.index);
       gameAudio.play(
         rarities.indexOf(data.beast.rarity) >= 2 ? "rare" : "capture",
       );
@@ -1685,7 +1699,7 @@ document
   .forEach((button) => {
     if (button.closest(".kit-content")) {
       const icons: Record<string, [string, string]> = {
-        collection: ["book", "Journal"],
+        collection: ["book", "Beasts"],
         pack: ["pack", "Pack"],
         missions: ["missions", "Missions"],
         lab: ["egg", "Hatchery"],
@@ -1778,6 +1792,31 @@ function hud() {
     find("#active-label").textContent =
       companion.name + " · Lv " + companion.level;
   }
+  const kitBeasts = find("#kit-beasts");
+  kitBeasts.replaceChildren();
+  for (const b of profile.collection) {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    const isActive = b.id === profile.active;
+    chip.className = isActive ? "kit-beast-chip active" : "kit-beast-chip";
+    chip.title = isActive
+      ? b.name + " (" + b.rarity + ") · Following you"
+      : "Follow me: " + b.name + " (" + b.rarity + ")";
+    chip.setAttribute("aria-pressed", String(isActive));
+    const img = document.createElement("img");
+    img.src = "/beast-portraits/" + b.name + ".webp";
+    img.alt = b.name;
+    const tag = document.createElement("span");
+    tag.textContent = b.name;
+    chip.append(img, tag);
+    chip.onclick = () => {
+      swapCompanion(b);
+      const kit = chip.closest("details");
+      if (kit) kit.open = false;
+    };
+    kitBeasts.append(chip);
+  }
+  kitBeasts.hidden = !profile.collection.length;
   find("#orb-count").textContent = String(profile.orbs);
   find("#shard-count").textContent = String(profile.shards);
   find("#ranger").textContent =
@@ -1859,6 +1898,9 @@ export async function joinExpedition(playMode = mode) {
         case "habitats":
           if (mode !== "pvp") setHabitats(data);
           sessionReady = true;
+          break;
+        case "spots":
+          if (mode !== "pvp" && data) setSpots(data);
           break;
         case "market":
           market = data;
